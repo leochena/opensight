@@ -55,7 +55,7 @@
 ## 快速开始
 
 ```bash
-git clone <your-repo-url> opensight
+git clone https://github.com/leochena/opensight.git opensight
 cd opensight
 cp .env.example .env
 docker compose up -d

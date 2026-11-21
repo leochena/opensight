@@ -14,7 +14,7 @@
 ## 一、快速启动
 
 ```bash
-git clone <repo> opensight && cd opensight
+git clone https://github.com/leochena/opensight.git opensight && cd opensight
 cp .env.example .env
 docker compose up -d
 docker compose logs -f worker
