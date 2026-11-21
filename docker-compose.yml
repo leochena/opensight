@@ -23,6 +23,8 @@ services:
     volumes:
       - ./data:/data
       - ./config/config.yaml:/app/config.yaml:ro
+      - ./data/models:/root/.cache/opensight/models   # 宠物 ONNX 权重持久化
+      - ./data/insightface:/root/.insightface         # 人脸模型包持久化
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - OPENSIGHT_DATA_DIR=/data
@@ -51,6 +53,8 @@ services:
     volumes:
       - ./data:/data
       - ./config/config.yaml:/app/config.yaml:ro
+      - ./data/models:/root/.cache/opensight/models
+      - ./data/insightface:/root/.insightface
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - OPENSIGHT_DATA_DIR=/data

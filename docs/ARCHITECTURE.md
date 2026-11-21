@@ -61,16 +61,16 @@
 
 | 后端 | 用途 | 依赖 |
 |---|---|---|
-| `mock` | 默认，零依赖验证链路 | 无 |
-| `insightface` | 生产推荐 | insightface + onnxruntime + 模型包 |
+| `insightface` | **默认**，buffalo_sc 真实识别（已实测） | insightface + onnxruntime + 模型包 |
 | `deepface` | 备选 | deepface |
+| `mock` | 降级，零依赖验证链路 | 无 |
 
 **宠物**（`pets.backend`）：
 
 | 后端 | 用途 | 依赖 |
 |---|---|---|
-| `pet-mock` | 默认，零依赖验证链路 | 无 |
-| `pet-reid` | 真实宠物重识别 | timm + torch + torchvision + 权重 |
+| `pet-onnx` | **默认**，open-noodle ONNX 真实识别，Apache-2.0（已实测） | onnxruntime + 权重（自动下载） |
+| `pet-mock` | 降级，零依赖验证链路 | 无 |
 
 `engine_for_kind(kind)` 按库类型路由到对应引擎。人脸库与宠物库的向量空间彼此隔离，不会跨类型比对。详见 [PETS.md](PETS.md)。
 

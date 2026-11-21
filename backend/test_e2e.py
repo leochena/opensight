@@ -2,7 +2,7 @@
 import os
 import tempfile
 
-os.environ.setdefault("OPENSIGHT_CONFIG", "/nonexistent")  # 用默认配置(mock)
+os.environ["OPENSIGHT_CONFIG"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yaml")  # 用默认配置(mock)
 tmpdir = tempfile.mkdtemp(prefix="opensight_e2e_")
 os.environ["OPENSIGHT_DATA_DIR"] = tmpdir
 

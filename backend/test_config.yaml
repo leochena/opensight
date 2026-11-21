@@ -1,0 +1,13 @@
+# 测试专用配置：零依赖 mock 引擎，避免测试触发模型下载
+general:
+  name: "OpenSight Test"
+recognition:
+  backend: mock
+  model: buffalo_sc
+  threshold: 0.6
+  detect_every_n_frames: 5
+  min_face_size: 40
+pets:
+  enabled: true
+  backend: pet-mock
+  threshold: 0.35

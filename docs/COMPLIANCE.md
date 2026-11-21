@@ -69,7 +69,8 @@ OpenSight 默认提供：
 ## 六、第三方模型许可
 
 - OpenSight 源码：MIT
-- InsightFace 代码：MIT；但其模型权重（buffalo_l 等）与训练数据多为非商业研究用途
+- InsightFace 代码：MIT；但其模型权重（buffalo_sc / buffalo_l 等）与训练数据多为非商业研究用途，**商用前请核对许可**
+- 宠物模型 open-noodle/pet-recognition：Apache-2.0，可商用
 - 商用前请核对所用模型许可，必要时替换为可商用模型或自训练
 - "OpenSight" 名称与标识不因 MIT 授权而授予商标使用许可
 

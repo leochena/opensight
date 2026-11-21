@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-os.environ.setdefault("OPENSIGHT_CONFIG", "/nonexistent")
+os.environ["OPENSIGHT_CONFIG"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yaml")
 os.environ.setdefault("OPENSIGHT_DATA_DIR", tempfile.mkdtemp(prefix="opensight_pets_"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -51,6 +51,37 @@ class PetEngineTests(unittest.TestCase):
             self.assertFalse((a == face_vec).all())
         finally:
             os.unlink(path)
+
+
+class RealModelTests(unittest.TestCase):
+    """真实 ONNX 模型集成测试：仅在模型可用时运行，验证embedding有效。"""
+
+    def test_pet_onnx_real_embedding(self):
+        model_path = os.path.join(
+            os.path.expanduser("~"), ".cache", "opensight", "models",
+            "pet-recognition-small.onnx",
+        )
+        img_dir = os.path.join(
+            os.path.expanduser("~"), ".cache", "opensight", "testimgs",
+        )
+        if not os.path.exists(model_path) or not os.path.isdir(img_dir):
+            self.skipTest("本地无缓存模型/测试图，跳过（CI 环境可选）")
+        try:
+            from app.recognition import PetOnnxEngine
+        except Exception as e:
+            self.skipTest(f"onnxruntime 未安装：{e}")
+
+        engine = PetOnnxEngine.__new__(PetOnnxEngine)  # 绕过 config 下载逻辑
+        import onnxruntime as ort
+        engine.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        a = engine.embedding_from_file(os.path.join(img_dir, "dog1.jpg"))
+        b = engine.embedding_from_file(os.path.join(img_dir, "dog2.jpg"))
+        self.assertIsNotNone(a)
+        self.assertEqual(a.shape, (512,))
+        self.assertAlmostEqual(float((a ** 2).sum()), 1.0, places=3)  # L2 归一化
+        sim = float(engine.similarity(a, b))
+        self.assertGreater(sim, -1.0)
+        self.assertLess(sim, 1.0)
 
 
 class PetApiTests(unittest.TestCase):

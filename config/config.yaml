@@ -7,12 +7,13 @@ general:
   overlay_notice: true
 
 # 人脸检测与识别后端
-# 可选: insightface | deepface | mock
+# 可选: insightface(默认,真实) | deepface | mock(降级)
 # mock 用于无模型环境下测试整个链路（不装 InsightFace 时自动降级）
 recognition:
-  backend: mock
-  # insightface 模型包: buffalo_s(快) / buffalo_l(准) / buffalo_sc(监控场景小目标)
-  model: buffalo_s
+  # insightface 默认真实可用；mock 仅作离线降级（如首次下载模型失败）
+  backend: insightface
+  # insightface 模型包: buffalo_sc(监控场景小目标,快) / buffalo_s / buffalo_l(准)
+  model: buffalo_sc
   # 相似度阈值（余弦相似度），高于此值产生"候选匹配"事件；仅作人工复核提示
   threshold: 0.6
   # 每路摄像头每隔 N 帧检测一次（降低负载）
@@ -23,11 +24,15 @@ recognition:
   providers: ""
 
 # 宠物识别（与人脸库并存，互不混比）
-# pet-mock 为零依赖占位；真实识别需自行加装 timm/torch 并切换 pet-reid
+# pet-onnx 默认真实可用：open-noodle 重识别模型（Apache-2.0），
+# 首次运行自动下载权重到 ~/.cache/opensight/models，之后离线可用。
 pets:
   enabled: true
-  backend: pet-mock       # pet-mock | pet-reid
-  pet_model: ""           # pet-reid 使用的 timm 模型名
+  backend: pet-onnx       # pet-onnx | pet-mock
+  model_size: small       # small(89MB) | base(348MB) | large(1.2GB)
+  model_path: ""          # 可选：直接指定本地 .onnx 文件，跳过下载
+  # 宠物相似度阈值：该模型常态分数偏低，建议 0.25~0.45（人脸用 recognition.threshold）
+  threshold: 0.35
 
 # 摄像头：可在 Web UI 动态添加，此处为静态示例
 # ONVIF 设备可由 worker 自动发现并填充 rtsp 地址

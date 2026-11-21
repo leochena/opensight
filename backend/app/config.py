@@ -9,14 +9,17 @@ import yaml
 DEFAULTS: Dict[str, Any] = {
     "general": {"name": "OpenSight", "overlay_notice": True},
     "recognition": {
-        "backend": "mock",
-        "model": "buffalo_s",
+        "backend": "insightface",
+        "model": "buffalo_sc",
         "threshold": 0.6,
         "detect_every_n_frames": 5,
         "min_face_size": 40,
         "providers": "",
     },
-    "pets": {"enabled": True, "backend": "pet-mock", "pet_model": ""},
+    "pets": {
+        "enabled": True, "backend": "pet-onnx", "model_size": "small",
+        "model_path": "", "threshold": 0.35,
+    },
     "cameras": [],
     "events": {
         "retention_days": 30,

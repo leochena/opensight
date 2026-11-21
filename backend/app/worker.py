@@ -38,6 +38,7 @@ def run_camera(cam: models.Camera) -> None:
     cfg = settings["recognition"]
     every_n = max(1, int(cfg.get("detect_every_n_frames", 5)))
     threshold = float(cfg.get("threshold", 0.6))
+    pet_threshold = float(settings.get("pets", {}).get("threshold", 0.35))
     cooldown = int(settings["events"].get("cooldown_seconds", 30))
     save_snap = bool(settings["events"].get("save_snapshot", True))
     gallery_ids = [int(x) for x in (cam.gallery_ids or "").split(",") if x.strip()] or None
@@ -71,6 +72,7 @@ def run_camera(cam: models.Camera) -> None:
 
                 for kind, kind_refs in groups.items():
                     det_engine = engine_for_kind(kind)
+                    kind_threshold = pet_threshold if kind == "pet" else threshold
                     detected = det_engine.detect_faces(frame)
                     for bbox, emb in detected:
                         best = None
@@ -79,7 +81,7 @@ def run_camera(cam: models.Camera) -> None:
                             s = det_engine.similarity(emb, ref_emb)
                             if s > best_score:
                                 best_score, best = s, person
-                        if best and best_score >= threshold:
+                        if best and best_score >= kind_threshold:
                             now = time.time()
                             if now - last_hit.get(best.id, 0) < cooldown:
                                 continue

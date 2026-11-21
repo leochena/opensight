@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-os.environ.setdefault("OPENSIGHT_CONFIG", "/nonexistent")
+os.environ["OPENSIGHT_CONFIG"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yaml")
 os.environ.setdefault("OPENSIGHT_DATA_DIR", tempfile.mkdtemp(prefix="opensight_notify_"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

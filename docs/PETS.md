@@ -2,13 +2,29 @@
 
 OpenSight 除了人脸，还支持**宠物识别**：把你家猫狗的照片导入一个「宠物库」，摄像头识别到相似宠物时产生候选事件并走同样的告警链路。人脸库和宠物库**分别建库、分别识别、互不混比**。
 
-## 典型用途
+## 已实测的真实模型
 
-- 走失宠物找回辅助：把走失宠物的照片建库，在门口/院子的摄像头上做提醒
-- 自家猫狗出入提醒：识别到自家宠物时推送到手机
-- 寄养/宠物店：对已登记的宠物做出入提醒
+宠物识别默认使用 [open-noodle/pet-recognition](https://huggingface.co/open-noodle/pet-recognition-small) 的 ONNX 模型，**开箱即真实可用**（不是占位 mock）：
 
-结果永远是**候选提示**，必须人工复核，不是身份认定。
+| 规格 | 值 |
+|---|---|
+| 模型 | open-noodle/pet-recognition-small（DINOv2 + 投影头） |
+| 许可 | **Apache-2.0**（可商用，对公益/开源友好） |
+| 输入 | 224×224 RGB，ImageNet 归一化 |
+| 输出 | 512 维 L2 归一化 embedding，余弦相似度直接可比 |
+| 权重大小 | small 89MB / base 348MB / large 1.2GB |
+
+**首次运行会自动下载权重**到 `data/models/`（容器内 `/root/.cache/opensight/models`），之后完全离线。已通过本地实测：不同个体余弦相似度约 -0.17~0.18，猫狗区分明显。
+
+识别准确率（模型卡公布，从未见过的个体 top-1）：
+
+| 尺寸 | 狗 | 猫 | 大小 |
+|---|---|---|---|
+| small（默认） | 53.5% | 91.3% | 89MB |
+| base | 61.2% | 91.6% | 348MB |
+| large | 67.2% | 91.5% | 1.2GB |
+
+> **现实预期**：狗的个体识别比猫难得多。这套模型适合"是不是我家那只"的小范围比对，不适合大范围识别。猫的效果很好。要更高狗识别率可换 base/large（见下）。
 
 ## 快速使用
 
@@ -17,39 +33,33 @@ OpenSight 除了人脸，还支持**宠物识别**：把你家猫狗的照片导
 3. 摄像头关联该库（不填 `gallery_ids` 则关联所有库）
 4. 命中后在「事件记录」查看，带 🐾 宠物标签
 
-同一路摄像头可以同时关联人脸库和宠物库：worker 会按库类型分组，分别调用对应引擎，不会把狗和人脸混在一起比。
+同一路摄像头可以同时关联人脸库和宠物库：worker 按库类型分组，分别调用对应引擎，不会把狗和人脸混在一起比。
 
-## 识别引擎与模型
+## 配置
 
-| 引擎 | 说明 | 依赖 |
-|---|---|---|
-| `pet-mock`（默认） | 零依赖占位，用确定性哈希向量跑通全链路，**识别结果无实际意义** | 无 |
-| `pet-reid` | 真实宠物重识别，整帧提特征 | timm + torch + torchvision + 模型权重 |
+`config/config.yaml`：
 
-默认 `pet-mock` 保证开箱能跑通部署、建库、比对、告警全链路。要真实识别：
+```yaml
+pets:
+  enabled: true
+  backend: pet-onnx        # pet-onnx（真实）| pet-mock（占位，仅测链路）
+  model_size: small        # small / base / large
+  model_path: ""           # 可选：直接指定本地 .onnx 文件，跳过下载
+  threshold: 0.35          # 宠物阈值；该模型分数偏低，建议 0.25~0.45
+```
 
-1. 在 `backend/requirements.txt` 取消注释并加装：
-   ```
-   timm
-   torch
-   torchvision
-   ```
-2. `config/config.yaml`：
-   ```yaml
-   pets:
-     backend: pet-reid
-     pet_model: "resnet50"   # timm 模型名
-   ```
-3. `docker compose up -d --build`
+人脸与宠物用**不同阈值**：人脸用 `recognition.threshold`（默认 0.6），宠物用 `pets.threshold`（默认 0.35）。因为宠物模型的相似度分布整体偏低，套用人脸阈值会漏报。
 
-> 说明：当前的 `pet-reid` 用整帧特征做比对，适合"背景干净、宠物占画面主体"的场景（如门口、院子）。
-> 若要框选画面中的宠物个体，需要再接一层目标检测器（如 YOLO 的 cat/dog 类），
-> 这部分作为扩展点留给用户按需实现，不影响现有链路。
+改完重启：`docker compose restart worker api`。
 
-### 模型许可提醒
+## 关于检测框
 
-`timm` 代码为 Apache-2.0，但具体模型权重的许可各异（有的仅研究用途）。
-商用前请核对所用权重的许可条款。OpenSight 本身 MIT 不覆盖第三方模型权重。
+当前 `pet-onnx` 用**整帧特征**做比对，适合"背景干净、宠物占画面主体"的场景（门口、院子、宠物店柜台）。如果要像 Frigate 那样框出画面里的猫狗个体再识别，需要再接一层目标检测器（如 YOLO 的 cat/dog 类）——这是扩展点，用户可按需实现，不影响现有链路。
+
+## 降级与离线
+
+- 无网络时首次下载会失败，可手动把模型放进 `data/models/pet-recognition-small.onnx`，或用 `model_path` 指向本地文件
+- 想完全零依赖跑通链路（比如 CI），把 `backend` 改成 `pet-mock`（占位，识别结果无意义）
 
 ## 合规提示
 

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import urllib.request
 from typing import List, Tuple
 
 import numpy as np
@@ -176,50 +178,73 @@ class PetMockEngine(BaseEngine):
     detect_faces = detect_pets
 
 
-class PetReidEngine(BaseEngine):
-    """真实宠物重识别（可选）。
+# open-noodle 宠物重识别模型（Apache-2.0，ONNX，输出 512 维 L2 归一化向量）
+PET_MODEL_URLS = {
+    "small": "https://huggingface.co/open-noodle/pet-recognition-small/resolve/main/recognition/model.onnx",
+    "base": "https://huggingface.co/open-noodle/pet-recognition-base/resolve/main/recognition/model.onnx",
+    "large": "https://huggingface.co/open-noodle/pet-recognition-large/resolve/main/recognition/model.onnx",
+}
+_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 3, 1, 1)
+_IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 3, 1, 1)
 
-    约定：依赖 AnimalReID/CLIP 类库提供 embedding；这里只定义统一接口。
-    默认不启用，用户按需在 requirements 中加装并在 config 中切换。
+
+class PetOnnxEngine(BaseEngine):
+    """真实宠物重识别：open-noodle ONNX 模型，onnxruntime 推理。
+
+    - 输入 224x224 RGB，ImageNet 归一化；输出 512 维 L2 归一化 embedding
+    - 权重首次使用自动下载到 OPENSIGHT_MODEL_DIR（默认 ~/.cache/opensight/models），
+      之后完全离线；offset 提供 model_path 指定本地文件
+    - 相似度即余弦/点积；因该模型常态分数偏低，宠物阈值建议 0.25~0.45
     """
 
-    name = "pet-reid"
+    name = "pet-onnx"
     dim = 512
 
     def __init__(self) -> None:
-        model_name = settings["recognition"].get("pet_model", "")
-        # 预留：加载用户提供的动物重识别模型（需自行安装依赖并放置权重）
-        try:
-            from timm import create_model  # type: ignore
-            self.model = create_model(model_name or "resnet50", pretrained=False, num_classes=0)
-        except Exception as e:
-            raise RuntimeError(f"宠物识别依赖 timm/模型不可用：{e}")
+        import onnxruntime as ort  # type: ignore
 
-    def _embed(self, image) -> np.ndarray | None:
-        import torch  # type: ignore
-        from torchvision import transforms  # type: ignore
+        pets = settings.get("pets", {})
+        size = str(pets.get("model_size", "small") or "small").lower()
+        if size not in PET_MODEL_URLS:
+            size = "small"
+        local = str(pets.get("model_path", "") or "").strip()
+        if not local:
+            cache = os.getenv(
+                "OPENSIGHT_MODEL_DIR",
+                os.path.join(os.path.expanduser("~"), ".cache", "opensight", "models"),
+            )
+            os.makedirs(cache, exist_ok=True)
+            local = os.path.join(cache, f"pet-recognition-{size}.onnx")
+        if not os.path.exists(local) or os.path.getsize(local) < 1000:
+            log.info("下载宠物识别模型 %s -> %s", size, local)
+            os.makedirs(os.path.dirname(local), exist_ok=True)
+            urllib.request.urlretrieve(PET_MODEL_URLS[size], local)
+        self.model_path = local
+        self.session = ort.InferenceSession(local, providers=["CPUExecutionProvider"])
 
-        tf = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ])
-        with torch.no_grad():
-            out = self.model(tf(image)[None, ...])
-        v = out.cpu().numpy().ravel().astype(np.float32)
-        return v / (np.linalg.norm(v) + 1e-8)
+    def _embed(self, rgb) -> np.ndarray | None:
+        from PIL import Image
+
+        im = rgb if isinstance(rgb, Image.Image) else Image.fromarray(rgb.astype(np.uint8))
+        im = im.convert("RGB").resize((224, 224))
+        x = np.asarray(im, dtype=np.float32).transpose(2, 0, 1) / 255.0
+        x = ((x[None, ...] - _IMAGENET_MEAN) / _IMAGENET_STD).astype(np.float32)
+        v = self.session.run(["embedding"], {"input": x})[0][0]
+        v = np.asarray(v, dtype=np.float32).ravel()
+        n = float(np.linalg.norm(v))
+        return (v / n).astype(np.float32) if n > 0 else None
 
     def embedding_from_file(self, path: str):
-        import cv2
-        img = cv2.imread(path)
-        if img is None:
+        from PIL import Image
+
+        if not os.path.exists(path):
             return None
-        return self._embed(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        return self._embed(Image.open(path))
 
     def detect_pets(self, image):
-        # 简化：整帧代表向量（如需框选宠物可接入 YOLO 等检测器）
-        emb = self._embed(image)
+        # worker 传入的是 BGR（cv2），转换为 RGB；整帧作为候选
+        rgb = image[:, :, ::-1] if image.ndim == 3 and image.shape[2] == 3 else image
+        emb = self._embed(rgb)
         if emb is None:
             return []
         h, w = image.shape[:2]
@@ -241,10 +266,13 @@ def build_engine() -> BaseEngine:
 
 
 def build_pet_engine() -> BaseEngine:
-    backend = settings["recognition"].get("pet_backend", "pet-mock").lower()
+    backend = str(settings.get("pets", {}).get("backend", "pet-mock") or "pet-mock").lower()
+    # 兼容旧配置键 recognition.pet_backend
+    if settings["recognition"].get("pet_backend"):
+        backend = str(settings["recognition"]["pet_backend"]).lower()
     try:
-        if backend == "pet-reid":
-            return PetReidEngine()
+        if backend in ("pet-onnx", "pet-reid"):
+            return PetOnnxEngine()
     except Exception as e:
         log.warning("宠物后端 %s 初始化失败，降级为 pet-mock：%s", backend, e)
     return PetMockEngine()

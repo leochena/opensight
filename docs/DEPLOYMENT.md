@@ -22,32 +22,30 @@ docker compose logs -f worker
 
 访问 `http://<主机IP>:8080`。
 
-首次启动默认使用 `mock` 识别后端（零依赖、仅用于验证链路）。界面会显示引擎为 `mock`。
-要启用真实人脸识别，见下一节。
+首次启动即使用**真实识别**：人脸 InsightFace `buffalo_sc`、宠物 open-noodle ONNX，均已实测可用。
+首次运行会自动下载模型权重（人脸约 14MB、宠物 small 89MB）到 `data/` 下挂载的目录，
+之后完全离线。界面「合规与隐私 → 识别引擎」可查看当前后端。
 
-## 二、启用真实人脸识别
+> 首次启动需联网下载模型。若下载失败，会自动降级到 mock（结果无意义，界面会提示）。
+> 离线环境可预先把权重放进 `data/models/` 和 `data/insightface/`。
 
-1. 编辑 `backend/requirements.txt`，取消注释：
-   ```
-   insightface==0.7.3
-   onnxruntime==1.19.2
-   ```
-2. 编辑 `config/config.yaml`：
-   ```yaml
-   recognition:
-     backend: insightface
-     model: buffalo_s   # buffalo_s 快 / buffalo_l 准 / buffalo_sc 小目标
-     providers: ""      # 有 GPU 可填 CUDAExecutionProvider
-   ```
-3. 重新构建：
-   ```bash
-   docker compose up -d --build
-   ```
-4. 首次运行会自动下载模型包（约 300MB），需联网一次；之后可完全离线。
+## 二、识别模型配置（可选调整）
 
-> 模型许可提醒：InsightFace 的代码为 MIT，但其发布的模型权重（buffalo_l 等）
-> 多用于非商业研究。用于商业用途前请核对模型许可，或替换为可商用模型。
-> 详见 COMPLIANCE.md。
+默认配置无需改动。要调整：
+
+```yaml
+recognition:
+  backend: insightface       # insightface（真实）| mock（降级）
+  model: buffalo_sc          # buffalo_sc 小目标快 / buffalo_s / buffalo_l 准
+pets:
+  backend: pet-onnx          # pet-onnx（真实）| pet-mock（降级）
+  model_size: small          # small / base / large
+```
+
+改完执行 `docker compose restart worker api`。有 NVIDIA GPU 可取消 compose 里的 deploy 注释加速。
+
+> 模型许可：InsightFace 代码 MIT， buffalo 系列权重多用于非商业研究，商用前请核对；
+> 宠物模型 open-noodle 为 Apache-2.0，可商用。详见 COMPLIANCE.md。
 
 ## 三、添加摄像头
 
@@ -83,7 +81,7 @@ devices:
 1. Web 界面新建比对库时，类型选「宠物」
 2. 添加宠物照片时可填物种/品种；摄像头关联该库即可
 
-默认 `pet-mock` 零依赖、仅供验证链路。要真实识别，见 [PETS.md](PETS.md)（需加装 timm/torch 并切换 `pets.backend`）。
+宠物识别默认 `pet-onnx`（真实模型，Apache-2.0），首次运行自动下载权重。模型尺寸、阈值等配置见 [PETS.md](PETS.md)。
 
 ## 六、调整识别灵敏度
 
@@ -129,8 +127,9 @@ WebRTC 需要 go2rtc 正确运行。检查 `docker compose logs go2rtc`，
 **Q: 告警一定要有域名吗？**
 不需要。只有"传统 Webhook 且接收方架在公网"才需要。Telegram、群机器人、本地长连接桥接器都是 OpenSight 主动连出去，本机不开端口。详见 NOTIFICATIONS.md。
 
-**Q: mock 后端能用于实际识别吗？**
-不能。mock 仅用于验证系统链路，识别结果无意义。务必切换到真实后端。
+**Q: 界面显示引擎是 mock 怎么办？**
+说明真实模型加载失败（多为首次下载权重时无网络）自动降级了。检查结果：
+`docker compose logs worker | grep -i 降级`，确认联网后重启，或按部署文档第二节手动放置权重。mock 结果无意义。
 
 **Q: 多摄像头性能不足？**
 调大 `detect_every_n_frames`、使用 GPU/加速棒（Coral/Hailo）、

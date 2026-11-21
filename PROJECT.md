@@ -42,7 +42,8 @@ opensight/
 - **摄像头接入**：ONVIF / RTSP / WebRTC（go2rtc）/ USB
 - **用户自建比对库**：手动上传照片，本地提取特征向量，支持多库分组
 - **识别引擎可插拔**：默认 mock（零依赖验证链路），可切 InsightFace / DeepFace
-- **宠物识别**：人脸/宠物双域隔离，宠物库记录物种，事件带主体类型；老库自动迁移不丢数据
+- **真实识别开箱可用**：人脸 InsightFace buffalo_sc + 宠物 open-noodle ONNX（Apache-2.0），均本地实测通过；首次运行自动下载权重后离线可用，mock 仅作降级
+- **宠物识别**：人脸/宠物双域隔离、各用独立阈值，宠物库记录物种，事件带主体类型；老库自动迁移不丢数据
 - **事件系统**：相似度阈值、冷却期、快照、自动过期清理
 - **多通道告警**：Telegram Bot（无需域名/无需 long polling）、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ / 微信）、传统 Webhook、MQTT；可同时启用，单通道失败互不干扰，提供测试通知 API
 - **Web UI**：实时预览、比对库管理、事件复核、审计日志、一键清除数据
@@ -61,11 +62,12 @@ opensight/
 ## 验证状态
 
 - 后端 Python 语法检查：通过（含 notifiers/ 全部模块）
-- 前端 TypeScript + Vite 构建：通过（1572 模块，产物 161.67KB JS / 6.98KB CSS）
+- 前端 TypeScript + Vite 构建：通过（1572 模块，产物 164.93KB JS / 7.78KB CSS）
 - 配置文件 YAML 格式：全部通过（config.yaml / go2rtc.yaml / docker-compose.yml）
 - 配置加载与 mock 相似度逻辑：通过
+- **真实模型实测**：人脸 buffalo_sc 检测到人脸并提 512 维特征；宠物 ONNX 提 512 维 L2 归一化向量、猫狗相似度区分明显（均已本机跑通）
 - **通知适配器单测：12 项全部通过** —— 消息格式化与 HTML 转义、Telegram 出站 sendMessage 与密钥脱敏、三种群机器人消息体、cqhttp/OpenClaw 本地桥接、Webhook、多通道并发分发与单通道失败隔离、旧配置回退兼容
-- **宠物识别单测：6 项全部通过** —— 双引擎零依赖、按类型路由、向量空间隔离、宠物库/物种 API 往返、配置暴露双引擎、旧库自动补齐新列
+- **宠物识别单测：7 项全部通过** —— 双引擎零依赖、按类型路由、向量空间隔离、宠物库/物种 API 往返、配置暴露双引擎、旧库自动补齐新列、**真实 ONNX 模型 embedding 集成测试**
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
 
 ## 启动方式

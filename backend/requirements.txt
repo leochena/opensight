@@ -10,10 +10,11 @@ numpy==1.26.4
 opencv-python-headless==4.10.0.84
 Pillow==10.4.0
 
+# 真实识别依赖（默认安装，开箱即用）
+# 宠物：open-noodle ONNX 模型（Apache-2.0），首次运行自动下载权重
+onnxruntime==1.19.2
+# 人脸：InsightFace buffalo_sc，首次运行自动下载模型包
+insightface==0.7.3
+
 # 可选：ONVIF 设备发现
 python-onvif-zeep==0.2.12
-
-# 可选：真实人脸识别后端（镜像默认不装大依赖，用 mock 也可跑通全链路）
-# 若要用真实识别，取消注释并调整 Dockerfile
-# insightface==0.7.3
-# onnxruntime==1.19.2
