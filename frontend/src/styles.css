@@ -64,6 +64,13 @@ input:focus,select:focus{outline:none;border-color:var(--brand)}
 .icon-btn{border:0;background:none;color:#9aa4b1;cursor:pointer;padding:5px}
 .icon-btn:hover{color:var(--danger)}
 .add-person{background:#f8faf9;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.import-warning{background:var(--amber-soft);border:1px solid #f0dcb8;color:#7d5310;border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12.5px}
+.import-warning.critical{background:var(--danger-soft);border-color:#e9bfbc;color:var(--danger)}
+.import-warning-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.import-warning p{margin:4px 0}
+.ack-check{display:flex;flex-direction:row;align-items:flex-start;gap:9px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:12px 0;line-height:1.55}
+.ack-check input{width:auto;flex:none;margin:4px 0 0;accent-color:var(--brand)}
+.ack-check span{color:#48525f}
 .person-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
 .person-card{border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;background:#fff}
 .person-card img{width:100%;height:110px;object-fit:cover;border-radius:7px;background:#eef1f4}

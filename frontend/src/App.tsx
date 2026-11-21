@@ -207,23 +207,42 @@ function AddPerson({ gid, onAdded }: any) {
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [ack, setAck] = useState(false)
+
+  // 导入风险警示：姓名/备注出现通缉、在逃等字样时，升级为强警示
+  const sensitive = /通缉|在逃|逃犯|追逃|通緝|在緝|wanted|fugitive/i.test(`${name} ${note}`)
 
   const submit = async () => {
-    if (!name || !file) return
+    if (!name || !file || !ack) return
     setBusy(true); setMsg('')
-    try { await api.addPerson(gid, name, note, file); setName(''); setNote(''); setFile(null); onAdded() }
+    try { await api.addPerson(gid, name, note, file, ack); setName(''); setNote(''); setFile(null); setAck(false); onAdded() }
     catch (e: any) { setMsg(e.message) }
     finally { setBusy(false) }
   }
 
   return (
     <div className="add-person">
+      <div className={`import-warning ${sensitive ? 'critical' : ''}`}>
+        <div className="import-warning-head"><AlertTriangle size={16} />
+          <strong>{sensitive ? '危险警示：疑似通缉 / 在逃人员信息' : '导入前必读：照片来源与用途限制'}</strong>
+        </div>
+        {sensitive ? (
+          <p>你填写的姓名或备注包含「通缉 / 在逃 / 逃犯」等字样。将此类人员照片导入比对库用于「发现逃犯」存在<strong>重大法律风险</strong>：通缉令的目的是发动群众<strong>提供线索</strong>，不等于授权第三方建库做人脸比对；刑事侦查权属公权力，个人与商户不得自行行使。</p>
+        ) : (
+          <p>只导入你有权处理的照片（家人、已登记员工、经授权人员），并确保采集区域已显著告知。请勿导入通缉 / 在逃人员照片用于识别逃犯。</p>
+        )}
+        <p className="small">如发现违法犯罪线索，请直接拨打 <strong>110</strong> 向公安机关举报，由警方依法处理。本工具结果仅为人工复核提示，不作为身份认定或执法依据。</p>
+      </div>
       <div className="form-row">
         <label>姓名<input value={name} onChange={e => setName(e.target.value)} placeholder="姓名或称呼" /></label>
         <label>备注<input value={note} onChange={e => setNote(e.target.value)} placeholder="可选" /></label>
       </div>
       <label>照片（清晰正面照）<input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} /></label>
-      <button className="btn primary" disabled={busy || !name || !file} onClick={submit}>{busy ? '处理中…' : '添加到比对库'}</button>
+      <label className="ack-check">
+        <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
+        <span>我确认：照片来源合法、已取得必要授权，且不用于导入通缉 / 在逃人员照片做逃犯识别。</span>
+      </label>
+      <button className="btn primary" disabled={busy || !name || !file || !ack} onClick={submit}>{busy ? '处理中…' : '添加到比对库'}</button>
       {msg && <div className="error">{msg}</div>}
     </div>
   )

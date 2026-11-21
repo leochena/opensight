@@ -119,7 +119,7 @@ def list_persons(gid: int):
 
 
 @app.post("/api/galleries/{gid}/persons", response_model=schemas.PersonOut)
-async def add_person(gid: int, name: str, note: str = "", file: UploadFile = File(...)):
+async def add_person(gid: int, name: str, note: str = "", risk_ack: bool = False, file: UploadFile = File(...)):
     db = SessionLocal()
     try:
         if not db.query(models.Gallery).filter(models.Gallery.id == gid).first():
@@ -130,7 +130,8 @@ async def add_person(gid: int, name: str, note: str = "", file: UploadFile = Fil
             shutil.copyfileobj(file.file, f)
         try:
             p = gallery.add_person(db, gid, name, note, tmp)
-            audit(db, "person.add", f"{gid}:{name}")
+            # 记录用户是否确认了导入风险警示，作为合规审计依据
+            audit(db, "person.add", f"{gid}:{name} [risk_ack={'1' if risk_ack else '0'}]")
             db.commit()
             return schemas.PersonOut(id=p.id, gallery_id=p.gallery_id, name=p.name, note=p.note, created_at=p.created_at)
         except ValueError as e:

@@ -33,7 +33,7 @@ def main():
     bio = io.BytesIO()
     img.save(bio, format="JPEG")
     files = {"file": ("test.jpg", bio.getvalue(), "image/jpeg")}
-    show("add person", client.post(f"/api/galleries/{gid}/persons?name=张三&note=测试", files=files))
+    show("add person", client.post(f"/api/galleries/{gid}/persons?name=张三&note=测试&risk_ack=true", files=files))
     show("list persons", client.get(f"/api/galleries/{gid}/persons"))
     show("list galleries", client.get("/api/galleries"))
 

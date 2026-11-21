@@ -24,11 +24,11 @@ export const api = {
     }),
   deleteGallery: (id: number) => req<any>(`/galleries/${id}`, { method: 'DELETE' }),
   persons: (gid: number) => req<Person[]>(`/galleries/${gid}/persons`),
-  addPerson: (gid: number, name: string, note: string, file: File) => {
-    // 后端 name/note 是 query 参数，file 才是 multipart 字段
+  addPerson: (gid: number, name: string, note: string, file: File, riskAck = false) => {
+    // 后端 name/note/risk_ack 是 query 参数，file 才是 multipart 字段
     const fd = new FormData()
     fd.append('file', file)
-    const q = `name=${encodeURIComponent(name)}&note=${encodeURIComponent(note)}`
+    const q = `name=${encodeURIComponent(name)}&note=${encodeURIComponent(note)}&risk_ack=${riskAck}`
     return req<Person>(`/galleries/${gid}/persons?${q}`, { method: 'POST', body: fd })
   },
   deletePerson: (id: number) => req<any>(`/persons/${id}`, { method: 'DELETE' }),
