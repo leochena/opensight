@@ -17,18 +17,18 @@ export const api = {
   config: () => req<Config>('/config'),
 
   galleries: () => req<Gallery[]>('/galleries'),
-  createGallery: (name: string, description: string) =>
+  createGallery: (name: string, description: string, kind: 'face' | 'pet' = 'face') =>
     req<Gallery>('/galleries', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, kind }),
     }),
   deleteGallery: (id: number) => req<any>(`/galleries/${id}`, { method: 'DELETE' }),
   persons: (gid: number) => req<Person[]>(`/galleries/${gid}/persons`),
-  addPerson: (gid: number, name: string, note: string, file: File, riskAck = false) => {
-    // 后端 name/note/risk_ack 是 query 参数，file 才是 multipart 字段
+  addPerson: (gid: number, name: string, note: string, file: File, riskAck = false, species = '') => {
+    // 后端 name/note/species/risk_ack 是 query 参数，file 才是 multipart 字段
     const fd = new FormData()
     fd.append('file', file)
-    const q = `name=${encodeURIComponent(name)}&note=${encodeURIComponent(note)}&risk_ack=${riskAck}`
+    const q = `name=${encodeURIComponent(name)}&note=${encodeURIComponent(note)}&species=${encodeURIComponent(species)}&risk_ack=${riskAck}`
     return req<Person>(`/galleries/${gid}/persons?${q}`, { method: 'POST', body: fd })
   },
   deletePerson: (id: number) => req<any>(`/persons/${id}`, { method: 'DELETE' }),

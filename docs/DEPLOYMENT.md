@@ -76,13 +76,22 @@ devices:
 3. 系统本地提取特征向量（不保存原图到外部）。
 4. 多人照片请尽量一图一人、光线充足、正面清晰。
 
-## 五、调整识别灵敏度
+## 五、宠物识别（可选）
+
+人脸和宠物是两类独立比对库，互不混比：
+
+1. Web 界面新建比对库时，类型选「宠物」
+2. 添加宠物照片时可填物种/品种；摄像头关联该库即可
+
+默认 `pet-mock` 零依赖、仅供验证链路。要真实识别，见 [PETS.md](PETS.md)（需加装 timm/torch 并切换 `pets.backend`）。
+
+## 六、调整识别灵敏度
 
 编辑 `config/config.yaml` 的 `recognition.threshold`（余弦相似度，0–1）：
 - 越高越严格（误报少，漏报多），建议 0.55–0.7
 - 修改后重启 worker：`docker compose restart worker`
 
-## 六、告警
+## 七、告警
 
 支持同时启用多个通道，全部在 `config.yaml` 的 `notifications:` 段配置：
 
@@ -102,13 +111,13 @@ curl -X POST http://localhost:8080/api/notifications/test
 
 完整配置步骤见 [NOTIFICATIONS.md](NOTIFICATIONS.md)。
 
-## 七、数据治理
+## 八、数据治理
 
 - 事件自动清理：`events.retention_days`（默认 30 天）
 - 一键清除全部数据：Web 界面"合规与隐私 → 清除所有本地数据"（需二次确认）
 - 所有数据位于 `data/` 目录，可直接备份或删除
 
-## 八、常见问题
+## 九、常见问题
 
 **Q: worker 一直显示"没有启用的摄像头"？**
 在 Web 界面添加摄像头后确认状态为"运行中"。

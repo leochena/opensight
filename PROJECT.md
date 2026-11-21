@@ -16,13 +16,14 @@ opensight/
 │   └── go2rtc.yaml        流媒体网关配置
 ├── backend/               FastAPI 后端 + 推理 worker
 │   ├── app/main.py        全部 REST API 路由
-│   ├── app/recognition.py 识别引擎抽象（mock/insightface/deepface）
+│   ├── app/recognition.py 识别引擎抽象（人脸 mock/insightface/deepface + 宠物 pet-mock/pet-reid）
 │   ├── app/gallery.py     比对库：照片→本地特征向量
 │   ├── app/worker.py      拉流、检测、比对、事件
 │   ├── app/events.py      留存清理（通知已拆分到 notifiers/）
 │   ├── app/notifiers/     多通道通知：Telegram/群机器人/本地桥接/Webhook/MQTT
 │   ├── test_e2e.py        端到端冒烟测试
-│   └── test_notifiers.py  通知分发单测
+│   ├── test_notifiers.py  通知分发单测
+│   └── test_pets.py       宠物识别/库类型/迁移单测
 ├── frontend/              React + TypeScript + Vite + Nginx
 │   └── src/App.tsx        实时预览/比对库/事件/合规 四个页面
 ├── docs/
@@ -30,6 +31,7 @@ opensight/
 │   ├── CAMERAS.md         摄像头协议与品牌 RTSP 参考
 │   ├── COMPLIANCE.md      全球合规边界（必读）
 │   ├── NOTIFICATIONS.md   告警通道配置（域名/长连接的取舍）
+│   ├── PETS.md            宠物识别使用与真实模型启用
 │   └── ARCHITECTURE.md    架构与扩展
 └── scripts/setup.sh       一键初始化脚本
 ```
@@ -40,6 +42,7 @@ opensight/
 - **摄像头接入**：ONVIF / RTSP / WebRTC（go2rtc）/ USB
 - **用户自建比对库**：手动上传照片，本地提取特征向量，支持多库分组
 - **识别引擎可插拔**：默认 mock（零依赖验证链路），可切 InsightFace / DeepFace
+- **宠物识别**：人脸/宠物双域隔离，宠物库记录物种，事件带主体类型；老库自动迁移不丢数据
 - **事件系统**：相似度阈值、冷却期、快照、自动过期清理
 - **多通道告警**：Telegram Bot（无需域名/无需 long polling）、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ / 微信）、传统 Webhook、MQTT；可同时启用，单通道失败互不干扰，提供测试通知 API
 - **Web UI**：实时预览、比对库管理、事件复核、审计日志、一键清除数据
@@ -62,6 +65,7 @@ opensight/
 - 配置文件 YAML 格式：全部通过（config.yaml / go2rtc.yaml / docker-compose.yml）
 - 配置加载与 mock 相似度逻辑：通过
 - **通知适配器单测：12 项全部通过** —— 消息格式化与 HTML 转义、Telegram 出站 sendMessage 与密钥脱敏、三种群机器人消息体、cqhttp/OpenClaw 本地桥接、Webhook、多通道并发分发与单通道失败隔离、旧配置回退兼容
+- **宠物识别单测：6 项全部通过** —— 双引擎零依赖、按类型路由、向量空间隔离、宠物库/物种 API 往返、配置暴露双引擎、旧库自动补齐新列
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
 
 ## 启动方式

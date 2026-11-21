@@ -20,7 +20,7 @@ from .config import settings
 from .database import SessionLocal, init_db
 from .events import cleanup as cleanup_events
 from .notifiers import dispatch_test, notifier_names
-from .recognition import engine
+from .recognition import engine, pet_engine
 
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("opensight.api")
@@ -53,6 +53,7 @@ def get_config():
         "overlay_notice": settings["general"].get("overlay_notice", True),
         "threshold": settings["recognition"]["threshold"],
         "engine": engine.name,
+        "pet_engine": pet_engine.name,
         # 只返回通道名，不返回 token / URL 等敏感配置
         "notifiers": notifier_names(),
     }
@@ -69,6 +70,7 @@ def list_galleries():
             cnt = db.query(models.Person).filter(models.Person.gallery_id == g.id).count()
             out.append(schemas.GalleryOut(
                 id=g.id, name=g.name, description=g.description,
+                kind=getattr(g, "kind", "face") or "face",
                 created_at=g.created_at, person_count=cnt,
             ))
         return out
@@ -80,13 +82,14 @@ def list_galleries():
 def create_gallery(payload: schemas.GalleryCreate):
     db = SessionLocal()
     try:
-        g = models.Gallery(name=payload.name, description=payload.description)
+        kind = payload.kind if payload.kind in ("face", "pet") else "face"
+        g = models.Gallery(name=payload.name, description=payload.description, kind=kind)
         db.add(g)
         db.commit()
         db.refresh(g)
-        audit(db, "gallery.create", payload.name)
+        audit(db, "gallery.create", f"{payload.name} [{kind}]")
         db.commit()
-        return schemas.GalleryOut(id=g.id, name=g.name, description=g.description, created_at=g.created_at)
+        return schemas.GalleryOut(id=g.id, name=g.name, description=g.description, kind=kind, created_at=g.created_at)
     finally:
         db.close()
 
@@ -119,7 +122,7 @@ def list_persons(gid: int):
 
 
 @app.post("/api/galleries/{gid}/persons", response_model=schemas.PersonOut)
-async def add_person(gid: int, name: str, note: str = "", risk_ack: bool = False, file: UploadFile = File(...)):
+async def add_person(gid: int, name: str, note: str = "", species: str = "", risk_ack: bool = False, file: UploadFile = File(...)):
     db = SessionLocal()
     try:
         if not db.query(models.Gallery).filter(models.Gallery.id == gid).first():
@@ -129,11 +132,14 @@ async def add_person(gid: int, name: str, note: str = "", risk_ack: bool = False
         with open(tmp, "wb") as f:
             shutil.copyfileobj(file.file, f)
         try:
-            p = gallery.add_person(db, gid, name, note, tmp)
+            p = gallery.add_person(db, gid, name, note, tmp, species=species)
             # 记录用户是否确认了导入风险警示，作为合规审计依据
             audit(db, "person.add", f"{gid}:{name} [risk_ack={'1' if risk_ack else '0'}]")
             db.commit()
-            return schemas.PersonOut(id=p.id, gallery_id=p.gallery_id, name=p.name, note=p.note, created_at=p.created_at)
+            return schemas.PersonOut(
+                id=p.id, gallery_id=p.gallery_id, name=p.name, note=p.note,
+                species=getattr(p, "species", "") or "", created_at=p.created_at,
+            )
         except ValueError as e:
             raise HTTPException(400, str(e))
         finally:
@@ -321,7 +327,9 @@ def list_events(limit: int = 100, status: str = ""):
             out.append(schemas.EventOut(
                 id=e.id, camera_id=e.camera_id, camera_name=e.camera_name,
                 person_id=e.person_id, person_name=e.person_name,
-                gallery_id=e.gallery_id, similarity=e.similarity,
+                gallery_id=e.gallery_id,
+                subject_kind=getattr(e, "subject_kind", "face") or "face",
+                similarity=e.similarity,
                 snapshot_url=url, status=e.status, note=e.note,
                 created_at=e.created_at,
             ))

@@ -2,6 +2,7 @@ export interface Gallery {
   id: number
   name: string
   description: string
+  kind: 'face' | 'pet'
   created_at?: string
   person_count: number
 }
@@ -11,6 +12,7 @@ export interface Person {
   gallery_id: number
   name: string
   note: string
+  species: string
   created_at?: string
 }
 
@@ -31,6 +33,7 @@ export interface SightEvent {
   person_id: number
   person_name: string
   gallery_id: number
+  subject_kind: 'face' | 'pet'
   similarity: number
   snapshot_url: string
   status: string
@@ -44,5 +47,6 @@ export interface Config {
   overlay_notice: boolean
   threshold: number
   engine: string
+  pet_engine: string
   notifiers: string[]
 }

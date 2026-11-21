@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle } from 'lucide-react'
+import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound } from 'lucide-react'
 import { api } from './api'
 import type { Camera, Config, Gallery, SightEvent } from './types'
 
@@ -147,15 +147,19 @@ function Galleries() {
   const [persons, setPersons] = useState<any[]>([])
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newKind, setNewKind] = useState<'face' | 'pet'>('face')
   const [err, setErr] = useState('')
 
   const load = useCallback(() => api.galleries().then(setGalleries).catch(e => setErr(e.message)), [])
   useEffect(() => { load() }, [load])
   useEffect(() => { if (selected) api.persons(selected).then(setPersons) }, [selected])
 
+  const selectedGallery = galleries.find(g => g.id === selected)
+  const isPet = selectedGallery?.kind === 'pet'
+
   const create = async () => {
     if (!newName) return
-    try { await api.createGallery(newName, newDesc); setNewName(''); setNewDesc(''); load() }
+    try { await api.createGallery(newName, newDesc, newKind); setNewName(''); setNewDesc(''); load() }
     catch (e: any) { setErr(e.message) }
   }
 
@@ -165,7 +169,13 @@ function Galleries() {
       <div className="two-col">
         <div className="card">
           <h3>新建比对库</h3>
-          <label>库名称<input value={newName} onChange={e => setNewName(e.target.value)} placeholder="例如：家人 / 员工" /></label>
+          <label>库名称<input value={newName} onChange={e => setNewName(e.target.value)} placeholder="例如：家人 / 员工 / 我家狗狗" /></label>
+          <label>类型
+            <select value={newKind} onChange={e => setNewKind(e.target.value as 'face' | 'pet')}>
+              <option value="face">👤 人脸（人员识别）</option>
+              <option value="pet">🐾 宠物（猫狗识别）</option>
+            </select>
+          </label>
           <label>说明<input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="可选" /></label>
           <button className="btn primary" onClick={create}><Plus size={16} />创建</button>
           <div className="divider" />
@@ -173,7 +183,7 @@ function Galleries() {
           <div className="list">
             {galleries.map(g => (
               <div className={`list-item ${selected === g.id ? 'sel' : ''}`} key={g.id} onClick={() => setSelected(g.id)}>
-                <div><strong>{g.name}</strong><div className="muted small">{g.person_count} 人 · {g.description}</div></div>
+                <div><strong>{g.kind === 'pet' ? <PawPrint size={14} /> : <UserRound size={14} />} {g.name}</strong><div className="muted small">{g.person_count} 条 · {g.kind === 'pet' ? '宠物库' : '人脸库'} · {g.description}</div></div>
                 <button className="icon-btn" onClick={e => { e.stopPropagation(); api.deleteGallery(g.id).then(() => { if (selected === g.id) setSelected(null); load() }) }}><Trash2 size={15} /></button>
               </div>
             ))}
@@ -182,15 +192,15 @@ function Galleries() {
         </div>
 
         <div className="card">
-          <h3>{selected ? `${galleries.find(g => g.id === selected)?.name} · 人员` : '选择左侧比对库'}</h3>
-          {selected && <AddPerson gid={selected} onAdded={() => { api.persons(selected).then(setPersons); load() }} />}
+          <h3>{selected ? `${selectedGallery?.name} · ${isPet ? '宠物' : '人员'}` : '选择左侧比对库'}</h3>
+          {selected && <AddPerson gid={selected} isPet={isPet} onAdded={() => { api.persons(selected).then(setPersons); load() }} />}
           {err && <div className="error">{err}</div>}
           <div className="person-grid">
             {persons.map(p => (
               <div className="person-card" key={p.id}>
                 <img src={`/api/persons/${p.id}/image`} alt={p.name} />
                 <div className="person-name">{p.name}</div>
-                <div className="muted small">{p.note}</div>
+                <div className="muted small">{p.species ? `${p.species} · ` : ''}{p.note}</div>
                 <button className="btn sm danger" onClick={() => { if (selected != null) api.deletePerson(p.id).then(() => { api.persons(selected).then(setPersons); load() }) }}><Trash2 size={13} />删除</button>
               </div>
             ))}
@@ -201,46 +211,58 @@ function Galleries() {
   )
 }
 
-function AddPerson({ gid, onAdded }: any) {
+function AddPerson({ gid, isPet, onAdded }: any) {
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
+  const [species, setSpecies] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [ack, setAck] = useState(false)
 
   // 导入风险警示：姓名/备注出现通缉、在逃等字样时，升级为强警示
-  const sensitive = /通缉|在逃|逃犯|追逃|通緝|在緝|wanted|fugitive/i.test(`${name} ${note}`)
+  const sensitive = !isPet && /通缉|在逃|逃犯|追逃|通緝|在緝|wanted|fugitive/i.test(`${name} ${note}`)
 
   const submit = async () => {
     if (!name || !file || !ack) return
     setBusy(true); setMsg('')
-    try { await api.addPerson(gid, name, note, file, ack); setName(''); setNote(''); setFile(null); setAck(false); onAdded() }
+    try {
+      await api.addPerson(gid, name, note, file, ack, species)
+      setName(''); setNote(''); setSpecies(''); setFile(null); setAck(false); onAdded()
+    }
     catch (e: any) { setMsg(e.message) }
     finally { setBusy(false) }
   }
 
   return (
     <div className="add-person">
-      <div className={`import-warning ${sensitive ? 'critical' : ''}`}>
-        <div className="import-warning-head"><AlertTriangle size={16} />
-          <strong>{sensitive ? '危险警示：疑似通缉 / 在逃人员信息' : '导入前必读：照片来源与用途限制'}</strong>
+      {isPet ? (
+        <div className="import-warning">
+          <div className="import-warning-head"><PawPrint size={16} /><strong>宠物库提示</strong></div>
+          <p>只导入你自己的宠物，或你有权处理的照片（家人宠物、已登记寄养）。收集他人宠物照片同样受个人信息与肖像相关规则约束，请勿用于跟踪、骚扰他人。</p>
+          <p className="small">识别结果仅为人工复核提示。宠物走失请与当地宠物救助 / 物业联系。</p>
         </div>
-        {sensitive ? (
-          <p>你填写的姓名或备注包含「通缉 / 在逃 / 逃犯」等字样。将此类人员照片导入比对库用于「发现逃犯」存在<strong>重大法律风险</strong>：通缉令的目的是发动群众<strong>提供线索</strong>，不等于授权第三方建库做人脸比对；刑事侦查权属公权力，个人与商户不得自行行使。</p>
-        ) : (
-          <p>只导入你有权处理的照片（家人、已登记员工、经授权人员），并确保采集区域已显著告知。请勿导入通缉 / 在逃人员照片用于识别逃犯。</p>
-        )}
-        <p className="small">如发现违法犯罪线索，请直接拨打 <strong>110</strong> 向公安机关举报，由警方依法处理。本工具结果仅为人工复核提示，不作为身份认定或执法依据。</p>
-      </div>
+      ) : (
+        <div className={`import-warning ${sensitive ? 'critical' : ''}`}>
+          <div className="import-warning-head"><AlertTriangle size={16} />
+            <strong>{sensitive ? '危险警示：疑似通缉 / 在逃人员信息' : '导入前必读：照片来源与用途限制'}</strong>
+          </div>
+          {sensitive ? (
+            <p>你填写的姓名或备注包含「通缉 / 在逃 / 逃犯」等字样。将此类人员照片导入比对库用于「发现逃犯」存在<strong>重大法律风险</strong>：通缉令的目的是发动群众<strong>提供线索</strong>，不等于授权第三方建库做人脸比对；刑事侦查权属公权力，个人与商户不得自行行使。</p>
+          ) : (
+            <p>只导入你有权处理的照片（家人、已登记员工、经授权人员），并确保采集区域已显著告知。请勿导入通缉 / 在逃人员照片用于识别逃犯。</p>
+          )}
+          <p className="small">如发现违法犯罪线索，请直接拨打 <strong>110</strong> 向公安机关举报，由警方依法处理。本工具结果仅为人工复核提示，不作为身份认定或执法依据。</p>
+        </div>
+      )}
       <div className="form-row">
-        <label>姓名<input value={name} onChange={e => setName(e.target.value)} placeholder="姓名或称呼" /></label>
-        <label>备注<input value={note} onChange={e => setNote(e.target.value)} placeholder="可选" /></label>
+        <label>{isPet ? '宠物名字' : '姓名'}<input value={name} onChange={e => setName(e.target.value)} placeholder={isPet ? '例如：小白' : '姓名或称呼'} /></label>
+        <label>{isPet ? '物种 / 品种' : '备注'}<input value={isPet ? species : note} onChange={e => isPet ? setSpecies(e.target.value) : setNote(e.target.value)} placeholder={isPet ? '例如：橘猫 / 金毛' : '可选'} /></label>
       </div>
-      <label>照片（清晰正面照）<input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} /></label>
+      <label>照片（{isPet ? '清晰侧面或正面全身照' : '清晰正面照'}）<input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} /></label>
       <label className="ack-check">
         <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
-        <span>我确认：照片来源合法、已取得必要授权，且不用于导入通缉 / 在逃人员照片做逃犯识别。</span>
+        <span>{isPet ? '我确认：这是我有权处理的宠物照片，不用于跟踪或骚扰他人。' : '我确认：照片来源合法、已取得必要授权，且不用于导入通缉 / 在逃人员照片做逃犯识别。'}</span>
       </label>
       <button className="btn primary" disabled={busy || !name || !file || !ack} onClick={submit}>{busy ? '处理中…' : '添加到比对库'}</button>
       {msg && <div className="error">{msg}</div>}
@@ -270,7 +292,7 @@ function Events() {
                 {e.snapshot_url ? <img src={e.snapshot_url} alt="snapshot" /> : <CameraIcon size={24} />}
               </div>
               <div className="event-body">
-                <div className="event-title"><strong>{e.person_name}</strong><span className="sim">相似度 {(e.similarity * 100).toFixed(1)}%</span></div>
+                <div className="event-title"><strong>{e.person_name}</strong>{e.subject_kind === 'pet' && <span className="kind-tag"><PawPrint size={12} />宠物</span>}<span className="sim">相似度 {(e.similarity * 100).toFixed(1)}%</span></div>
                 <div className="muted small">摄像头：{e.camera_name} · {e.created_at ? new Date(e.created_at).toLocaleString() : ''}</div>
                 <div className="muted small warn-note">AI 辅助提示 · 仅供人工复核，非身份认定</div>
               </div>
@@ -298,11 +320,12 @@ const NOTIFIER_LABELS: Record<string, string> = {
 function Privacy() {
   const [audit, setAudit] = useState<any[]>([])
   const [msg, setMsg] = useState('')
+  const [config, setConfig] = useState<Config | null>(null)
   const [notifiers, setNotifiers] = useState<string[]>([])
   const [testResult, setTestResult] = useState<Record<string, string>>({})
   useEffect(() => {
     api.audit().then(setAudit).catch(() => {})
-    api.config().then(c => setNotifiers(c.notifiers || [])).catch(() => {})
+    api.config().then(c => { setConfig(c); setNotifiers(c.notifiers || []) }).catch(() => {})
   }, [])
 
   const sendTest = () => {
@@ -318,6 +341,15 @@ function Privacy() {
   return (
     <section>
       <div className="page-head"><div><h1>合规与隐私</h1><p className="muted">工具中立，责任在使用者。请依法合规使用。</p></div></div>
+      <div className="card">
+        <h3>识别引擎</h3>
+        <div className="muted small">
+          人脸：{config?.engine || '-'} · 宠物：{config?.pet_engine || '-'}
+          {(config?.engine?.includes('mock') || config?.pet_engine?.includes('mock')) && (
+            <span className="warn-note"> ｜ mock 引擎仅用于验证链路，识别结果无实际意义</span>
+          )}
+        </div>
+      </div>
       <div className="card">
         <h3>使用原则</h3>
         <ul className="principles">

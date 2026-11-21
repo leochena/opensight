@@ -13,7 +13,7 @@ from . import gallery, models
 from .config import settings
 from .database import SessionLocal
 from .events import notify
-from .recognition import engine
+from .recognition import engine, engine_for_kind
 
 log = logging.getLogger("opensight.worker")
 
@@ -64,44 +64,52 @@ def run_camera(cam: models.Camera) -> None:
                 if not live or not live.enabled:
                     break
                 refs = gallery.load_embeddings(db, gallery_ids)
-                faces = engine.detect_faces(frame)
-                for bbox, emb in faces:
-                    best = None
-                    best_score = 0.0
-                    for person, ref_emb in refs:
-                        s = engine.similarity(emb, ref_emb)
-                        if s > best_score:
-                            best_score, best = s, person
-                    if best and best_score >= threshold:
-                        now = time.time()
-                        if now - last_hit.get(best.id, 0) < cooldown:
-                            continue
-                        last_hit[best.id] = now
-                        snap = ""
-                        if save_snap:
-                            x1, y1, x2, y2 = bbox
-                            crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
-                            if crop.size:
-                                snap = os.path.join(
-                                    settings.snapshot_dir,
-                                    f"{int(now)}_{cam.id}_{best.id}.jpg",
-                                )
-                                cv2.imwrite(snap, crop)
-                        ev = models.Event(
-                            camera_id=cam.id,
-                            camera_name=cam.name,
-                            person_id=best.id,
-                            person_name=best.name,
-                            gallery_id=best.gallery_id,
-                            similarity=best_score,
-                            snapshot_path=snap,
-                            status="candidate",
-                        )
-                        db.add(ev)
-                        db.commit()
-                        db.refresh(ev)
-                        log.info("候选匹配 %s / %s = %.3f", cam.name, best.name, best_score)
-                        notify(ev)
+                # 按比对库类型分组：人脸库走人脸引擎，宠物库走宠物引擎，互不混比
+                groups: dict[str, list] = {}
+                for ref in refs:
+                    groups.setdefault(ref[2], []).append(ref)
+
+                for kind, kind_refs in groups.items():
+                    det_engine = engine_for_kind(kind)
+                    detected = det_engine.detect_faces(frame)
+                    for bbox, emb in detected:
+                        best = None
+                        best_score = 0.0
+                        for person, ref_emb, _ in kind_refs:
+                            s = det_engine.similarity(emb, ref_emb)
+                            if s > best_score:
+                                best_score, best = s, person
+                        if best and best_score >= threshold:
+                            now = time.time()
+                            if now - last_hit.get(best.id, 0) < cooldown:
+                                continue
+                            last_hit[best.id] = now
+                            snap = ""
+                            if save_snap:
+                                x1, y1, x2, y2 = bbox
+                                crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+                                if crop.size:
+                                    snap = os.path.join(
+                                        settings.snapshot_dir,
+                                        f"{int(now)}_{cam.id}_{best.id}.jpg",
+                                    )
+                                    cv2.imwrite(snap, crop)
+                            ev = models.Event(
+                                camera_id=cam.id,
+                                camera_name=cam.name,
+                                person_id=best.id,
+                                person_name=best.name,
+                                gallery_id=best.gallery_id,
+                                subject_kind=kind,
+                                similarity=best_score,
+                                snapshot_path=snap,
+                                status="candidate",
+                            )
+                            db.add(ev)
+                            db.commit()
+                            db.refresh(ev)
+                            log.info("候选匹配 %s / %s(%s) = %.3f", cam.name, best.name, kind, best_score)
+                            notify(ev)
             finally:
                 db.close()
             time.sleep(0.03)

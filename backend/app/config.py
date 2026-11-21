@@ -16,6 +16,7 @@ DEFAULTS: Dict[str, Any] = {
         "min_face_size": 40,
         "providers": "",
     },
+    "pets": {"enabled": True, "backend": "pet-mock", "pet_model": ""},
     "cameras": [],
     "events": {
         "retention_days": 30,

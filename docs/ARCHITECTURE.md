@@ -34,7 +34,7 @@
 
 1. **导入**：用户上传照片 → API → 提取特征向量 → 存 `.npy` + 原图到 `data/gallery/`
 2. **推理**：worker 按 `detect_every_n_frames` 抽帧 → 检测人脸 → 提取特征 → 与库内向量算余弦相似度
-3. **事件**：相似度 ≥ 阈值且过冷却期 → 写 Event → 存快照 → `notifiers.dispatch()` 并发分发到所有启用通道
+3. **事件**：worker 按比对库类型分组（face / pet）分别调用对应引擎检测比对；相似度 ≥ 阈值且过冷却期 → 写 Event（带 `subject_kind`）→ 存快照 → `notifiers.dispatch()` 分发到所有启用通道
 4. **复核**：Web UI 展示候选事件，人工确认或忽略
 
 ## 通知通道抽象
@@ -55,7 +55,9 @@
 
 ## 识别后端抽象
 
-`app/recognition.py` 定义统一接口，三种实现：
+`app/recognition.py` 定义统一接口，两套引擎并存：
+
+**人脸**（`recognition.backend`）：
 
 | 后端 | 用途 | 依赖 |
 |---|---|---|
@@ -63,7 +65,14 @@
 | `insightface` | 生产推荐 | insightface + onnxruntime + 模型包 |
 | `deepface` | 备选 | deepface |
 
-切换只需改 `config.yaml` 的 `recognition.backend`。
+**宠物**（`pets.backend`）：
+
+| 后端 | 用途 | 依赖 |
+|---|---|---|
+| `pet-mock` | 默认，零依赖验证链路 | 无 |
+| `pet-reid` | 真实宠物重识别 | timm + torch + torchvision + 权重 |
+
+`engine_for_kind(kind)` 按库类型路由到对应引擎。人脸库与宠物库的向量空间彼此隔离，不会跨类型比对。详见 [PETS.md](PETS.md)。
 
 ## 目录结构
 
@@ -87,7 +96,7 @@ opensight/
 │       ├── database.py       SQLAlchemy
 │       ├── models.py         数据模型
 │       ├── schemas.py        Pydantic
-│       ├── recognition.py    识别引擎抽象
+│       ├── recognition.py    识别引擎抽象（人脸 + 宠物双引擎）
 │       ├── gallery.py        比对库操作
 │       ├── events.py         留存清理（通知入口转发到 notifiers）
 │       ├── notifiers/        多通道通知适配器 + 分发器

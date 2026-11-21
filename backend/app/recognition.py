@@ -149,6 +149,85 @@ class DeepFaceEngine(BaseEngine):
         return [((0, 0, w, h), emb)]
 
 
+class PetMockEngine(BaseEngine):
+    """宠物识别占位引擎：确定性向量，零依赖跑通全链路（不做真实识别）。"""
+
+    name = "pet-mock"
+
+    def _vec_from_bytes(self, data: bytes) -> np.ndarray:
+        h = hashlib.sha256(b"pet|" + data).digest()
+        seed = int.from_bytes(h[:4], "big")
+        rng = np.random.default_rng(seed)
+        v = rng.standard_normal(self.dim).astype(np.float32)
+        return v / (np.linalg.norm(v) + 1e-8)
+
+    def embedding_from_file(self, path: str):
+        with open(path, "rb") as f:
+            return self._vec_from_bytes(f.read())
+
+    def detect_pets(self, image):
+        # 不做真实检测：把整帧当作一个宠物候选，保证链路可测试
+        h, w = image.shape[:2]
+        if h < 1 or w < 1:
+            return []
+        return [((0, 0, w, h), self._vec_from_bytes(image.tobytes()))]
+
+    # 复用统一接口名，worker 可无差别调用
+    detect_faces = detect_pets
+
+
+class PetReidEngine(BaseEngine):
+    """真实宠物重识别（可选）。
+
+    约定：依赖 AnimalReID/CLIP 类库提供 embedding；这里只定义统一接口。
+    默认不启用，用户按需在 requirements 中加装并在 config 中切换。
+    """
+
+    name = "pet-reid"
+    dim = 512
+
+    def __init__(self) -> None:
+        model_name = settings["recognition"].get("pet_model", "")
+        # 预留：加载用户提供的动物重识别模型（需自行安装依赖并放置权重）
+        try:
+            from timm import create_model  # type: ignore
+            self.model = create_model(model_name or "resnet50", pretrained=False, num_classes=0)
+        except Exception as e:
+            raise RuntimeError(f"宠物识别依赖 timm/模型不可用：{e}")
+
+    def _embed(self, image) -> np.ndarray | None:
+        import torch  # type: ignore
+        from torchvision import transforms  # type: ignore
+
+        tf = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
+        with torch.no_grad():
+            out = self.model(tf(image)[None, ...])
+        v = out.cpu().numpy().ravel().astype(np.float32)
+        return v / (np.linalg.norm(v) + 1e-8)
+
+    def embedding_from_file(self, path: str):
+        import cv2
+        img = cv2.imread(path)
+        if img is None:
+            return None
+        return self._embed(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+    def detect_pets(self, image):
+        # 简化：整帧代表向量（如需框选宠物可接入 YOLO 等检测器）
+        emb = self._embed(image)
+        if emb is None:
+            return []
+        h, w = image.shape[:2]
+        return [((0, 0, w, h), emb)]
+
+    detect_faces = detect_pets
+
+
 def build_engine() -> BaseEngine:
     backend = settings["recognition"].get("backend", "mock").lower()
     try:
@@ -161,4 +240,20 @@ def build_engine() -> BaseEngine:
     return MockEngine()
 
 
+def build_pet_engine() -> BaseEngine:
+    backend = settings["recognition"].get("pet_backend", "pet-mock").lower()
+    try:
+        if backend == "pet-reid":
+            return PetReidEngine()
+    except Exception as e:
+        log.warning("宠物后端 %s 初始化失败，降级为 pet-mock：%s", backend, e)
+    return PetMockEngine()
+
+
 engine = build_engine()
+pet_engine = build_pet_engine()
+
+
+def engine_for_kind(kind: str) -> BaseEngine:
+    """按比对库类型选择识别引擎。"""
+    return pet_engine if kind == "pet" else engine

@@ -83,6 +83,7 @@ input:focus,select:focus{outline:none;border-color:var(--brand)}
 .event-body{flex:1}
 .event-title{display:flex;align-items:center;gap:10px}
 .sim{background:var(--brand-soft);color:var(--brand2);font-size:11px;padding:2px 8px;border-radius:6px}
+.kind-tag{display:inline-flex;align-items:center;gap:3px;background:#eef2fb;color:#34529c;font-size:11px;padding:2px 8px;border-radius:6px}
 .event-actions{display:flex;gap:7px}
 .principles{margin:0;padding-left:20px;color:#48525f}
 .principles li{margin:8px 0}

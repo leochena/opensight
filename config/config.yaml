@@ -22,6 +22,13 @@ recognition:
   # GPU: CUDA / CPUExecutionProvider；留空自动选择
   providers: ""
 
+# 宠物识别（与人脸库并存，互不混比）
+# pet-mock 为零依赖占位；真实识别需自行加装 timm/torch 并切换 pet-reid
+pets:
+  enabled: true
+  backend: pet-mock       # pet-mock | pet-reid
+  pet_model: ""           # pet-reid 使用的 timm 模型名
+
 # 摄像头：可在 Web UI 动态添加，此处为静态示例
 # ONVIF 设备可由 worker 自动发现并填充 rtsp 地址
 cameras:

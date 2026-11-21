@@ -10,12 +10,14 @@ from pydantic import BaseModel
 class GalleryCreate(BaseModel):
     name: str
     description: str = ""
+    kind: str = "face"  # face | pet
 
 
 class GalleryOut(BaseModel):
     id: int
     name: str
     description: str = ""
+    kind: str = "face"
     created_at: Optional[datetime] = None
     person_count: int = 0
 
@@ -27,6 +29,7 @@ class PersonOut(BaseModel):
     gallery_id: int
     name: str
     note: str = ""
+    species: str = ""
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -59,6 +62,7 @@ class EventOut(BaseModel):
     person_id: int = 0
     person_name: str = ""
     gallery_id: int = 0
+    subject_kind: str = "face"
     similarity: float = 0.0
     snapshot_url: str = ""
     status: str = "candidate"
