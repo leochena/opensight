@@ -1,0 +1,88 @@
+# OpenSight 主配置
+# 所有数据本地存储，不上云
+
+general:
+  name: "OpenSight"
+  # 是否在检测到匹配时叠加"AI 辅助识别 · 人工复核"水印
+  overlay_notice: true
+
+# 人脸检测与识别后端
+# 可选: insightface | deepface | mock
+# mock 用于无模型环境下测试整个链路（不装 InsightFace 时自动降级）
+recognition:
+  backend: mock
+  # insightface 模型包: buffalo_s(快) / buffalo_l(准) / buffalo_sc(监控场景小目标)
+  model: buffalo_s
+  # 相似度阈值（余弦相似度），高于此值产生"候选匹配"事件；仅作人工复核提示
+  threshold: 0.6
+  # 每路摄像头每隔 N 帧检测一次（降低负载）
+  detect_every_n_frames: 5
+  # 单帧最小人脸像素尺寸
+  min_face_size: 40
+  # GPU: CUDA / CPUExecutionProvider；留空自动选择
+  providers: ""
+
+# 摄像头：可在 Web UI 动态添加，此处为静态示例
+# ONVIF 设备可由 worker 自动发现并填充 rtsp 地址
+cameras:
+  - name: "示例-前门"
+    rtsp: "rtsp://user:pass@192.168.1.64:554/stream1"
+    enabled: false
+    # 检测区域（可选，归一化 0-1 坐标 [x1,y1,x2,y2]）
+    zone: null
+    # 该摄像头关联的比对库（空表示所有库）
+    gallery_ids: []
+
+# 事件留存
+events:
+  # 事件快照与记录保留天数（到期自动清理）
+  retention_days: 30
+  # 保存匹配帧快照到本地
+  save_snapshot: true
+  cooldown_seconds: 30
+
+# 告警通道：可同时启用多个。
+# 除 webhook 外，全部由 OpenSight 主动向外发起连接，
+# 你不需要公网 IP、域名或内网穿透；详细配置见 docs/NOTIFICATIONS.md。
+notifications:
+  # Telegram Bot：只需 bot_token + chat_id，无需 long polling
+  # （long polling 只在机器人需要"接收指令"时才需要，单向告警用不到）
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+    # 命中时若有本地快照，直接作为图片上传（仍是你主动出站）
+    include_photo: true
+
+  # 企业微信 / 钉钉 / 飞书群机器人：复制群设置里的 Webhook URL 即可
+  custom_bot:
+    enabled: false
+    provider: wecom          # wecom | dingtalk | feishu | generic
+    webhook_url: ""
+
+  # 本地长连接桥接器：OpenClaw / go-cqhttp / NapCat / Lagrange
+  # 机器人本体跑在本机并主动连平台，OpenSight 只 POST 到 127.0.0.1
+  local_bridge:
+    enabled: false
+    preset: openclaw         # openclaw | cqhttp | generic
+    url: "http://127.0.0.1:5700"
+    user_id: ""              # cqhttp 私聊目标 QQ 号
+    group_id: ""             # cqhttp 群号（填了则优先发群）
+
+  # 传统 HTTP Webhook（高级选项）
+  # 只有"接收方"架在公网上时才需要域名/穿透；填 127.0.0.1 则完全本地
+  webhook:
+    enabled: false
+    url: ""
+
+  # MQTT（可选，需有 broker）
+  mqtt:
+    enabled: false
+    host: ""
+    port: 1883
+    topic: "opensight/events"
+    username: ""
+    password: ""
+
+# 显著告知（合规用途）：在 Web UI 预览画面上叠加提示文字
+notice_text: "AI 辅助识别区域 · 结果仅供人工复核"

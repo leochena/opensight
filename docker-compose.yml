@@ -1,0 +1,73 @@
+services:
+  # 流媒体网关：ONVIF 发现 / RTSP 接入 / WebRTC 播放
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: opensight-go2rtc
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config/go2rtc.yaml:/config/go2rtc.yaml
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+
+  # 视觉推理 worker：人脸检测、特征提取、比对
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opensight-worker
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - go2rtc
+    volumes:
+      - ./data:/data
+      - ./config/config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - OPENSIGHT_DATA_DIR=/data
+      - OPENSIGHT_CONFIG=/app/config.yaml
+      - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OPENSIGHT_GO2RTC_API=http://127.0.0.1:1984
+    # 有 NVIDIA GPU 时取消下面注释（需安装 nvidia-container-toolkit）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Web API
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opensight-api
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - worker
+    volumes:
+      - ./data:/data
+      - ./config/config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - OPENSIGHT_DATA_DIR=/data
+      - OPENSIGHT_CONFIG=/app/config.yaml
+      - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # Web 前端
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: opensight-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}

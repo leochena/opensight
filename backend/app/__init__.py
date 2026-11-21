@@ -1,0 +1,1 @@
+"""OpenSight backend package."""

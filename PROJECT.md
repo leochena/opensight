@@ -1,0 +1,82 @@
+# OpenSight · 项目交付说明
+
+一个参考 Frigate 架构、纯本地 Docker 部署的开源人脸辅助识别项目。
+
+## 已交付内容
+
+```
+opensight/
+├── README.md              项目主页：定位、特性、快速开始、合规声明
+├── LICENSE                MIT 许可 + 模型/商标免责声明
+├── docker-compose.yml     4 服务编排（go2rtc / worker / api / web）
+├── .env.example           环境变量示例
+├── .gitignore             隐私数据排除（data/ 等不入库）
+├── config/
+│   ├── config.yaml        识别阈值、摄像头、告警配置
+│   └── go2rtc.yaml        流媒体网关配置
+├── backend/               FastAPI 后端 + 推理 worker
+│   ├── app/main.py        全部 REST API 路由
+│   ├── app/recognition.py 识别引擎抽象（mock/insightface/deepface）
+│   ├── app/gallery.py     比对库：照片→本地特征向量
+│   ├── app/worker.py      拉流、检测、比对、事件
+│   ├── app/events.py      留存清理（通知已拆分到 notifiers/）
+│   ├── app/notifiers/     多通道通知：Telegram/群机器人/本地桥接/Webhook/MQTT
+│   ├── test_e2e.py        端到端冒烟测试
+│   └── test_notifiers.py  通知分发单测
+├── frontend/              React + TypeScript + Vite + Nginx
+│   └── src/App.tsx        实时预览/比对库/事件/合规 四个页面
+├── docs/
+│   ├── DEPLOYMENT.md      部署与真实识别启用
+│   ├── CAMERAS.md         摄像头协议与品牌 RTSP 参考
+│   ├── COMPLIANCE.md      全球合规边界（必读）
+│   ├── NOTIFICATIONS.md   告警通道配置（域名/长连接的取舍）
+│   └── ARCHITECTURE.md    架构与扩展
+└── scripts/setup.sh       一键初始化脚本
+```
+
+## 实现的功能
+
+- **纯本地**：所有推理在容器内完成，无外部 API；断网可用
+- **摄像头接入**：ONVIF / RTSP / WebRTC（go2rtc）/ USB
+- **用户自建比对库**：手动上传照片，本地提取特征向量，支持多库分组
+- **识别引擎可插拔**：默认 mock（零依赖验证链路），可切 InsightFace / DeepFace
+- **事件系统**：相似度阈值、冷却期、快照、自动过期清理
+- **多通道告警**：Telegram Bot（无需域名/无需 long polling）、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ / 微信）、传统 Webhook、MQTT；可同时启用，单通道失败互不干扰，提供测试通知 API
+- **Web UI**：实时预览、比对库管理、事件复核、审计日志、一键清除数据
+- **合规内建**：显著告知标识、结果定性为"候选提示"、审计、数据最小化
+
+## 设计上的关键取舍
+
+1. **定位为通用辅助工具**，不绑定"逃犯识别"场景——比对库完全由用户导入，这在开源与全球分发上才站得住
+2. **不内置任何数据**，不提供任何人物照片或名单
+3. **结果定性为候选提示**，界面与通知均标注"仅供人工复核，非身份认定"
+4. **责任边界清晰**：COMPLIANCE.md 明确禁止用途与各司法辖区法规，使用者自负合规责任
+5. **默认 mock 引擎**：开箱即可跑通全链路，不预装重型模型；启用真实识别需用户自行配置并确认模型许可
+6. **告警优先长连接/出站通道**：默认推荐 Telegram Bot、群机器人和本地桥接器，都不要求用户有域名；传统 Webhook 降级为高级选项，避免公益用户卡在穿透配置上
+
+## 验证状态
+
+- 后端 Python 语法检查：通过（含 notifiers/ 全部模块）
+- 前端 TypeScript + Vite 构建：通过（1572 模块，产物 161.67KB JS / 6.98KB CSS）
+- 配置文件 YAML 格式：全部通过（config.yaml / go2rtc.yaml / docker-compose.yml）
+- 配置加载与 mock 相似度逻辑：通过
+- **通知适配器单测：12 项全部通过** —— 消息格式化与 HTML 转义、Telegram 出站 sendMessage 与密钥脱敏、三种群机器人消息体、cqhttp/OpenClaw 本地桥接、Webhook、多通道并发分发与单通道失败隔离、旧配置回退兼容
+- **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
+
+## 启动方式
+
+```bash
+cd opensight
+cp .env.example .env
+docker compose up -d --build
+# 访问 http://localhost:8080
+```
+
+详见 docs/DEPLOYMENT.md。
+
+## 已知限制
+
+- ONVIF 自动发现依赖 python-onvif-zeep，且部分设备需手动填地址
+- 当前 worker 串行处理多摄像头，路数多时需横向扩展
+- InsightFace 模型权重部分仅限非商业研究，商用前需核对许可或替换
+- Windows 原生 Docker 的 host 网络支持有限，建议 WSL2/Linux

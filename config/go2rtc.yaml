@@ -1,0 +1,16 @@
+# go2rtc 流媒体网关配置
+# 文档: https://github.com/AlexxIT/go2rtc
+
+api:
+  listen: ":1984"
+
+streams:
+  # 摄像头流在此定义，或通过 OpenSight Web UI 动态添加后写入本文件。
+  # 示例:
+  # front_door: "rtsp://user:pass@192.168.1.64:554/stream1"
+
+webrtc:
+  listen: ":8555"
+
+rtsp:
+  listen: ":8554"
