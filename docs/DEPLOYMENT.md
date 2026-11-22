@@ -23,11 +23,12 @@ docker compose logs -f worker
 访问 `http://<主机IP>:8080`。
 
 首次启动即使用**真实识别**：人脸 InsightFace `buffalo_sc`、宠物 open-noodle ONNX，均已实测可用。
-首次运行会自动下载模型权重（人脸约 14MB、宠物 small 89MB）到 `data/` 下挂载的目录，
-之后完全离线。界面「合规与隐私 → 识别引擎」可查看当前后端。
+**模型已在构建镜像时固化进镜像内**（`/opt/opensight/models` 与 `/opt/opensight/insightface`），
+`docker compose up` 开箱即用、完全离线，**运行时不需要联网下载**。
+界面「合规与隐私 → 识别引擎」可查看当前后端。
 
-> 首次启动需联网下载模型。若下载失败，会自动降级到 mock（结果无意义，界面会提示）。
-> 离线环境可预先把权重放进 `data/models/` 和 `data/insightface/`。
+> 镜像体积因内置模型约增加 100MB（人脸 ~14MB + 宠物 small 89MB），换来的是零配置开箱即用。
+> 若构建时下载模型失败（网络问题），镜像会构建失败并明确报错，不会产出"假可用"的镜像。
 
 ## 二、识别模型配置（可选调整）
 
@@ -81,7 +82,7 @@ devices:
 1. Web 界面新建比对库时，类型选「宠物」
 2. 添加宠物照片时可填物种/品种；摄像头关联该库即可
 
-宠物识别默认 `pet-onnx`（真实模型，Apache-2.0），首次运行自动下载权重。模型尺寸、阈值等配置见 [PETS.md](PETS.md)。
+宠物识别默认 `pet-onnx`（真实模型，Apache-2.0），模型已固化在镜像内、开箱即用。模型尺寸、阈值等配置见 [PETS.md](PETS.md)。
 
 ## 六、调整识别灵敏度
 
@@ -128,8 +129,8 @@ WebRTC 需要 go2rtc 正确运行。检查 `docker compose logs go2rtc`，
 不需要。只有"传统 Webhook 且接收方架在公网"才需要。Telegram、群机器人、本地长连接桥接器都是 OpenSight 主动连出去，本机不开端口。详见 NOTIFICATIONS.md。
 
 **Q: 界面显示引擎是 mock 怎么办？**
-说明真实模型加载失败（多为首次下载权重时无网络）自动降级了。检查结果：
-`docker compose logs worker | grep -i 降级`，确认联网后重启，或按部署文档第二节手动放置权重。mock 结果无意义。
+说明真实模型加载失败自动降级了（默认镜像已内置模型，正常不应发生）。查日志：
+`docker compose logs worker | grep -i 降级`。常见原因是自定义了 `model`/`model_size` 指向镜像未内置的模型且容器无法联网下载。改回默认值或按 PETS.md 手动放置权重。mock 结果无意义。
 
 **Q: 多摄像头性能不足？**
 调大 `detect_every_n_frames`、使用 GPU/加速棒（Coral/Hailo）、

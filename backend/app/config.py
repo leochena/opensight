@@ -62,6 +62,9 @@ class Settings:
                 self.raw = yaml.safe_load(f) or {}
         self.cfg = _deep_merge(DEFAULTS, self.raw)
         self.data_dir = os.getenv("OPENSIGHT_DATA_DIR", "/data")
+        # 模型默认从镜像内置目录读取（构建期已固化）；本地开发可覆盖
+        self.model_dir = os.getenv("OPENSIGHT_MODEL_DIR", "/opt/opensight/models")
+        self.insightface_root = os.getenv("INSIGHTFACE_ROOT", "/opt/opensight/insightface")
         self.go2rtc_api = os.getenv("OPENSIGHT_GO2RTC_API", "http://127.0.0.1:1984")
         self.log_level = os.getenv("OPENSIGHT_LOG_LEVEL", "INFO")
         os.makedirs(self.data_dir, exist_ok=True)

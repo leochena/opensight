@@ -93,6 +93,7 @@ class InsightFaceEngine(BaseEngine):
         providers = cfg.get("providers") or None
         self.app = FaceAnalysis(
             name=cfg.get("model", "buffalo_s"),
+            root=settings.insightface_root,
             providers=[providers] if providers else None,
         )
         ctx = 0  # GPU
@@ -209,14 +210,18 @@ class PetOnnxEngine(BaseEngine):
             size = "small"
         local = str(pets.get("model_path", "") or "").strip()
         if not local:
-            cache = os.getenv(
-                "OPENSIGHT_MODEL_DIR",
-                os.path.join(os.path.expanduser("~"), ".cache", "opensight", "models"),
-            )
-            os.makedirs(cache, exist_ok=True)
-            local = os.path.join(cache, f"pet-recognition-{size}.onnx")
+            # 优先用镜像内置模型；找不到再回退旧缓存目录（兼容非 Docker 运行）
+            baked = os.path.join(settings.model_dir, f"pet-recognition-{size}.onnx")
+            if os.path.exists(baked) and os.path.getsize(baked) > 1000:
+                local = baked
+            else:
+                cache = os.path.join(
+                    os.path.expanduser("~"), ".cache", "opensight", "models"
+                )
+                os.makedirs(cache, exist_ok=True)
+                local = os.path.join(cache, f"pet-recognition-{size}.onnx")
         if not os.path.exists(local) or os.path.getsize(local) < 1000:
-            log.info("下载宠物识别模型 %s -> %s", size, local)
+            log.info("内置/缓存均无模型，下载宠物识别模型 %s -> %s", size, local)
             os.makedirs(os.path.dirname(local), exist_ok=True)
             urllib.request.urlretrieve(PET_MODEL_URLS[size], local)
         self.model_path = local

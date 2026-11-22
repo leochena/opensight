@@ -21,6 +21,7 @@ opensight/
 │   ├── app/worker.py      拉流、检测、比对、事件
 │   ├── app/events.py      留存清理（通知已拆分到 notifiers/）
 │   ├── app/notifiers/     多通道通知：Telegram/群机器人/本地桥接/Webhook/MQTT
+│   ├── bake_models.py     构建期脚本：固化人脸/宠物模型进镜像
 │   ├── test_e2e.py        端到端冒烟测试
 │   ├── test_notifiers.py  通知分发单测
 │   └── test_pets.py       宠物识别/库类型/迁移单测
@@ -42,7 +43,7 @@ opensight/
 - **摄像头接入**：ONVIF / RTSP / WebRTC（go2rtc）/ USB
 - **用户自建比对库**：手动上传照片，本地提取特征向量，支持多库分组
 - **识别引擎可插拔**：默认 mock（零依赖验证链路），可切 InsightFace / DeepFace
-- **真实识别开箱可用**：人脸 InsightFace buffalo_sc + 宠物 open-noodle ONNX（Apache-2.0），均本地实测通过；首次运行自动下载权重后离线可用，mock 仅作降级
+- **真实识别开箱可用**：人脸 InsightFace buffalo_sc + 宠物 open-noodle ONNX（Apache-2.0），均本地实测通过；**模型在构建期固化进镜像，零下载、完全离线**，mock 仅作降级
 - **宠物识别**：人脸/宠物双域隔离、各用独立阈值，宠物库记录物种，事件带主体类型；老库自动迁移不丢数据
 - **事件系统**：相似度阈值、冷却期、快照、自动过期清理
 - **多通道告警**：Telegram Bot（无需域名/无需 long polling）、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ / 微信）、传统 Webhook、MQTT；可同时启用，单通道失败互不干扰，提供测试通知 API

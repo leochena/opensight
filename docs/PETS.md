@@ -14,7 +14,9 @@ OpenSight 除了人脸，还支持**宠物识别**：把你家猫狗的照片导
 | 输出 | 512 维 L2 归一化 embedding，余弦相似度直接可比 |
 | 权重大小 | small 89MB / base 348MB / large 1.2GB |
 
-**首次运行会自动下载权重**到 `data/models/`（容器内 `/root/.cache/opensight/models`），之后完全离线。已通过本地实测：不同个体余弦相似度约 -0.17~0.18，猫狗区分明显。
+**模型已直接固化在 Docker 镜像内**（`/opt/opensight/models/`），`docker compose up` 开箱即用，**首次运行无需联网下载**。已通过本地实测：不同个体余弦相似度约 -0.17~0.18，猫狗区分明显。
+
+只有当你把 `model_size` 切换到镜像未内置的 `base`/`large` 时，才会按需下载到容器内缓存（`/root/.cache/opensight/models/`）。想让更大模型也开箱即用，可在构建镜像前设置环境变量 `OPENSIGHT_PET_MODEL_SIZE=base`（见下）。
 
 识别准确率（模型卡公布，从未见过的个体 top-1）：
 
@@ -58,8 +60,13 @@ pets:
 
 ## 降级与离线
 
-- 无网络时首次下载会失败，可手动把模型放进 `data/models/pet-recognition-small.onnx`，或用 `model_path` 指向本地文件
-- 想完全零依赖跑通链路（比如 CI），把 `backend` 改成 `pet-mock`（占位，识别结果无意义）
+- 默认镜像已内置模型，**完全离线可用**，无需任何下载
+- 切换到 base/large 且无网络时，可手动把 `.onnx` 放进容器 `/root/.cache/opensight/models/`，或用 `model_path` 指向本地文件
+- 想让 base/large 也内置进镜像：构建时传环境变量
+  ```bash
+  OPENSIGHT_PET_MODEL_SIZE=base docker compose build worker
+  ```
+- 想零依赖跑通链路（比如 CI），把 `backend` 改成 `pet-mock`（占位，识别结果无意义）
 
 ## 合规提示
 
