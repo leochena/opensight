@@ -16,5 +16,5 @@ onnxruntime==1.19.2
 # 人脸：InsightFace buffalo_sc，首次运行自动下载模型包
 insightface==0.7.3
 
-# 可选：ONVIF 设备发现
-python-onvif-zeep==0.2.12
+# 可选：ONVIF 设备发现（PyPI 正确包名为 onvif-zeep）
+onvif-zeep==0.2.12

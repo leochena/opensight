@@ -67,6 +67,7 @@ opensight/
 - 配置文件 YAML 格式：全部通过（config.yaml / go2rtc.yaml / docker-compose.yml）
 - 配置加载与 mock 相似度逻辑：通过
 - **真实模型实测**：人脸 buffalo_sc 检测到人脸并提 512 维特征；宠物 ONNX 提 512 维 L2 归一化向量、猫狗相似度区分明显（均已本机跑通）
+- **Docker 镜像真实构建验证**：在 Docker Desktop 29.9.3 上完整构建成功，并在容器内验证两个模型已固化（宠物 89MB ONNX、人脸 buffalo_sc 两个 ONNX）且能零网络真实推理。构建中发现并修复 2 个此前未暴露的 bug：`python-onvif-zeep` 包名错误（正确为 `onvif-zeep`）、insightface 源码编译缺 `g++`（Dockerfile 补 build-essential）
 - **通知适配器单测：12 项全部通过** —— 消息格式化与 HTML 转义、Telegram 出站 sendMessage 与密钥脱敏、三种群机器人消息体、cqhttp/OpenClaw 本地桥接、Webhook、多通道并发分发与单通道失败隔离、旧配置回退兼容
 - **宠物识别单测：7 项全部通过** —— 双引擎零依赖、按类型路由、向量空间隔离、宠物库/物种 API 往返、配置暴露双引擎、旧库自动补齐新列、**真实 ONNX 模型 embedding 集成测试**
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）

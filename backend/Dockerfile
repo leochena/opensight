@@ -5,8 +5,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# g++/build-essential：insightface 无预编译 wheel，需源码编译其 Cython 扩展
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 libgomp1 \
+    libgl1 libglib2.0-0 libgomp1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/
