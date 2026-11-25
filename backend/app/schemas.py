@@ -39,6 +39,10 @@ class CameraCreate(BaseModel):
     name: str
     source: str
     kind: str = "rtsp"
+    # ONVIF 凭据（RTSP/USB 留空即可，凭据直接写在 URL 里）
+    username: str = ""
+    password: str = ""
+    onvif_port: int = 80
     zone: Optional[List[float]] = None
     gallery_ids: List[int] = []
 
@@ -49,6 +53,8 @@ class CameraOut(BaseModel):
     source: str
     kind: str
     enabled: bool
+    username: str = ""
+    onvif_port: int = 80
     zone: Optional[List[float]] = None
     gallery_ids: List[int] = []
 

@@ -4,10 +4,8 @@
 api:
   listen: ":1984"
 
-streams:
-  # 摄像头流在此定义，或通过 OpenSight Web UI 动态添加后写入本文件。
-  # 示例:
-  # front_door: "rtsp://user:pass@192.168.1.64:554/stream1"
+# 摄像头流由 OpenSight Web UI 添加后自动写入本段，删除摄像头时自动移除
+streams: {}
 
 webrtc:
   listen: ":8555"

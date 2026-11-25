@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound, Video, X, Download } from 'lucide-react'
 import { api } from './api'
-import type { Camera, Config, Gallery, SightEvent } from './types'
+import type { Camera, Config, Gallery, OnvifDevice, SightEvent } from './types'
 
 type Tab = 'dashboard' | 'galleries' | 'events' | 'privacy'
 
@@ -67,15 +67,46 @@ function Dashboard() {
   const [name, setName] = useState('')
   const [source, setSource] = useState('')
   const [kind, setKind] = useState('rtsp')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [onvifPort, setOnvifPort] = useState('80')
+  const [devices, setDevices] = useState<OnvifDevice[]>([])
+  const [discovering, setDiscovering] = useState(false)
+  const [discoverMsg, setDiscoverMsg] = useState('')
   const [err, setErr] = useState('')
+
+  const isOnvif = kind === 'onvif'
 
   const load = useCallback(() => api.cameras().then(setCameras).catch(e => setErr(e.message)), [])
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t) }, [load])
 
   const add = async () => {
     if (!name || !source) return
-    try { await api.createCamera({ name, source, kind }); setName(''); setSource(''); setShowAdd(false); load() }
+    try {
+      await api.createCamera({
+        name, source, kind,
+        ...(isOnvif ? { username, password, onvif_port: parseInt(onvifPort) || 80 } : {}),
+      })
+      setName(''); setSource(''); setUsername(''); setPassword(''); setDevices([]); setShowAdd(false); load()
+    }
     catch (e: any) { setErr(e.message) }
+  }
+
+  const discover = async () => {
+    setDiscovering(true); setDiscoverMsg(''); setErr(''); setDevices([])
+    try {
+      const found = await api.discoverOnvif(username, password, parseInt(onvifPort) || 80)
+      setDevices(found)
+      setDiscoverMsg(found.length ? `发现 ${found.length} 台设备，点选即可填入地址` : '未发现设备，请确认摄像头与主机同网段、ONVIF 已开启，或直接用 RTSP 地址添加')
+    } catch (e: any) {
+      setErr('发现失败：' + e.message)
+    } finally { setDiscovering(false) }
+  }
+
+  const pickDevice = (d: OnvifDevice) => {
+    setSource(d.address)
+    setOnvifPort(String(d.port || 80))
+    if (!name) setName([d.manufacturer, d.model].filter(Boolean).join(' ') || 'ONVIF 摄像头')
   }
 
   return (
@@ -98,7 +129,39 @@ function Dashboard() {
               </select>
             </label>
           </div>
-          <label>地址 / 流<input value={source} onChange={e => setSource(e.target.value)} placeholder="rtsp://user:pass@192.168.1.64:554/stream1 或 USB 序号 0" /></label>
+          <label>地址 / 流
+            <input
+              value={source}
+              onChange={e => setSource(e.target.value)}
+              placeholder={isOnvif ? '摄像头 IP，例如 192.168.1.64（可在下方发现）' : 'rtsp://user:pass@192.168.1.64:554/stream1 或 USB 序号 0'}
+            />
+          </label>
+
+          {isOnvif && (
+            <>
+              <div className="form-row">
+                <label>用户名<input value={username} onChange={e => setUsername(e.target.value)} placeholder="通常为 admin" autoComplete="off" /></label>
+                <label>密码<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="摄像头 ONVIF 密码" autoComplete="new-password" /></label>
+                <label>端口<input value={onvifPort} onChange={e => setOnvifPort(e.target.value)} placeholder="80" inputMode="numeric" /></label>
+              </div>
+              <p className="muted onvif-hint">ONVIF 凭据仅保存在本地，用于自动生成取流地址。多数设备账号为 admin，密码是设备后台/标签上的 ONVIF 密码（可能不同于 App 登录密码）。</p>
+              <button className="btn onvif-discover" onClick={discover} disabled={discovering}>
+                <Search size={14} />{discovering ? '发现中（最多约 1 分钟）…' : '发现局域网 ONVIF 设备'}
+              </button>
+              {discoverMsg && <p className="muted onvif-hint">{discoverMsg}</p>}
+              {devices.length > 0 && (
+                <div className="onvif-devices">
+                  {devices.map((d, i) => (
+                    <button className="onvif-device" key={`${d.address}-${i}`} onClick={() => pickDevice(d)}>
+                      <strong>{[d.manufacturer, d.model].filter(Boolean).join(' ') || d.address}</strong>
+                      <span>{d.address}:{d.port}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
           <div className="form-actions"><button className="btn" onClick={() => setShowAdd(false)}>取消</button><button className="btn primary" onClick={add}>保存</button></div>
         </div>
       )}

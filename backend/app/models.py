@@ -38,6 +38,10 @@ class Camera(Base):
     name = Column(String(200), nullable=False)
     source = Column(String(500), nullable=False)  # rtsp url / go2rtc stream name / device path
     kind = Column(String(50), default="rtsp")  # rtsp | onvif | usb
+    # ONVIF 认证凭据：保存原始输入，组装时生成 onvif://user:pass@host:port
+    username = Column(String(200), default="")
+    password = Column(String(200), default="")
+    onvif_port = Column(Integer, default=80)
     enabled = Column(Integer, default=1)
     zone = Column(Text, default="")  # JSON string [x1,y1,x2,y2]
     gallery_ids = Column(Text, default="")  # comma separated

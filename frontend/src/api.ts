@@ -1,4 +1,4 @@
-import type { Camera, Config, Gallery, Person, SightEvent } from './types'
+import type { Camera, Config, Gallery, OnvifDevice, Person, SightEvent } from './types'
 
 const B = '/api'
 
@@ -34,14 +34,20 @@ export const api = {
   deletePerson: (id: number) => req<any>(`/persons/${id}`, { method: 'DELETE' }),
 
   cameras: () => req<Camera[]>('/cameras'),
-  createCamera: (data: { name: string; source: string; kind: string }) =>
+  createCamera: (data: {
+    name: string; source: string; kind: string
+    username?: string; password?: string; onvif_port?: number
+  }) =>
     req<Camera>('/cameras', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
   deleteCamera: (id: number) => req<any>(`/cameras/${id}`, { method: 'DELETE' }),
   toggleCamera: (id: number) => req<any>(`/cameras/${id}/toggle`, { method: 'POST' }),
-  discoverOnvif: () => req<any[]>('/onvif/discover'),
+  discoverOnvif: (username = '', password = '', port = 80) => {
+    const q = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&port=${port}`
+    return req<OnvifDevice[]>(`/onvif/discover?${q}`)
+  },
 
   events: (limit = 100) => req<SightEvent[]>(`/events?limit=${limit}`),
   setEventStatus: (id: number, status: string, note = '') =>

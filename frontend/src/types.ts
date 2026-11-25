@@ -22,8 +22,18 @@ export interface Camera {
   source: string
   kind: string
   enabled: boolean
+  username: string
+  onvif_port: number
   zone: number[] | null
   gallery_ids: number[]
+}
+
+export interface OnvifDevice {
+  address: string
+  port: number
+  manufacturer: string
+  model: string
+  rtsp_url: string
 }
 
 export interface SightEvent {

@@ -20,6 +20,7 @@ from .config import settings
 from .database import SessionLocal, init_db
 from .events import cleanup as cleanup_events
 from .notifiers import dispatch_test, notifier_names
+from .onvif import build_source_for_camera
 from .recognition import engine, pet_engine
 
 logging.basicConfig(level=settings.log_level)
@@ -187,7 +188,8 @@ def list_cameras():
             gids = [int(x) for x in (c.gallery_ids or "").split(",") if x.strip()]
             out.append(schemas.CameraOut(
                 id=c.id, name=c.name, source=c.source, kind=c.kind,
-                enabled=bool(c.enabled), zone=zone, gallery_ids=gids,
+                enabled=bool(c.enabled), username=c.username or "",
+                onvif_port=c.onvif_port or 80, zone=zone, gallery_ids=gids,
             ))
         return out
     finally:
@@ -198,10 +200,19 @@ def list_cameras():
 def create_camera(payload: schemas.CameraCreate):
     db = SessionLocal()
     try:
+        # ONVIF：把设备地址 + 凭据组装成 go2rtc 可识别的源；
+        # RTSP/USB：凭据直接写在 URL 里，source 原样保存。
+        final_source = build_source_for_camera(
+            payload.source, payload.kind,
+            payload.username, payload.password, payload.onvif_port,
+        )
         c = models.Camera(
             name=payload.name,
-            source=payload.source,
+            source=final_source,
             kind=payload.kind,
+            username=payload.username,
+            password=payload.password,
+            onvif_port=payload.onvif_port,
             zone=json.dumps(payload.zone) if payload.zone else "",
             gallery_ids=",".join(str(x) for x in payload.gallery_ids),
             enabled=1,
@@ -215,7 +226,8 @@ def create_camera(payload: schemas.CameraCreate):
         db.commit()
         return schemas.CameraOut(
             id=c.id, name=c.name, source=c.source, kind=c.kind,
-            enabled=True, zone=payload.zone, gallery_ids=payload.gallery_ids,
+            enabled=True, username=c.username, onvif_port=c.onvif_port,
+            zone=payload.zone, gallery_ids=payload.gallery_ids,
         )
     finally:
         db.close()
@@ -263,7 +275,12 @@ def sync_go2rtc(db: Session) -> None:
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
-        streams = cfg.setdefault("streams", {})
+        # 注意：yaml 里 `streams:` 只有注释时 safe_load 得到 None，
+        # setdefault 会返回 None 而不是新建 dict，必须显式判空。
+        streams = cfg.get("streams")
+        if not isinstance(streams, dict):
+            streams = {}
+            cfg["streams"] = streams
         streams.clear()
         for c in db.query(models.Camera).all():
             key = f"cam_{c.id}"
@@ -275,21 +292,31 @@ def sync_go2rtc(db: Session) -> None:
 
 
 @app.get("/api/onvif/discover", response_model=List[schemas.OnvifDeviceOut])
-def discover_onvif(timeout: int = 3):
-    """局域网 ONVIF 设备发现（需 python-onvif-zeep）。"""
+def discover_onvif(
+    username: str = "",
+    password: str = "",
+    port: int = 80,
+    timeout: int = 3,
+):
+    """局域网 ONVIF 设备发现（需 onvif-zeep）。
+
+    携带凭据：多数设备在 GetDeviceInfo / GetStreamUri 时需要 WS-UsernameToken 认证，
+    因此把前端填的账号密码透传给 ONVIFCamera。仍发现不了时建议改用 go2rtc WebUI
+    的 ONVIF 自动发现（需 host 网络），或直接用 RTSP 地址添加。
+    """
     out = []
     try:
         from onvif import ONVIFCamera  # type: ignore
         import socket
-        # 使用 ONVIF WS-Discovery
-        from onvif import ONVIFService  # noqa: F401
-        # 简化：扫描常见 IP 段的 80 端口（生产可用真正的 WS-Discovery 库）
         local = socket.gethostbyname(socket.gethostname())
         prefix = ".".join(local.split(".")[:3])
         for last in range(2, 60):
             addr = f"{prefix}.{last}"
             try:
-                cam = ONVIFCamera(addr, 80, "", "", no_cache=True, timeout=1)
+                cam = ONVIFCamera(
+                    addr, port, username or "", password or "",
+                    no_cache=True, timeout=max(1, min(timeout, 5)),
+                )
                 info = cam.get_device_info()
                 media = cam.create_media_service()
                 profiles = media.GetProfiles()
@@ -298,7 +325,7 @@ def discover_onvif(timeout: int = 3):
                     "ProfileToken": profiles[0].token,
                 })
                 out.append(schemas.OnvifDeviceOut(
-                    address=addr, port=80,
+                    address=addr, port=port,
                     manufacturer=getattr(info, "Manufacturer", ""),
                     model=getattr(info, "Model", ""),
                     rtsp_url=stream.Uri if stream else "",
@@ -306,7 +333,7 @@ def discover_onvif(timeout: int = 3):
             except Exception:
                 continue
     except ImportError:
-        log.warning("未安装 python-onvif-zeep，ONVIF 发现不可用")
+        log.warning("onvif-zeep 未安装，ONVIF 发现不可用")
     return out
 
 

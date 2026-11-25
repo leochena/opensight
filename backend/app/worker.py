@@ -9,6 +9,7 @@ import time
 
 import cv2
 import numpy as np
+from urllib.parse import quote
 
 from . import gallery, models
 from .config import settings
@@ -25,7 +26,9 @@ def stream_url(source: str, kind: str) -> str:
         return source
     if kind == "onvif" or source.startswith("http"):
         api = settings.go2rtc_api.rstrip("/")
-        return f"{api}/api/stream?src={source}"
+        # src 可能是 onvif://user:pass@host:port 这种含特殊字符的完整源，
+        # 作为 query 参数必须整体编码，否则 @ : / 会破坏解析。
+        return f"{api}/api/stream?src={quote(source, safe='')}"
     return source
 
 

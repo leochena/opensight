@@ -58,10 +58,13 @@ services:
     volumes:
       - ./data:/data
       - ./config/config.yaml:/app/config.yaml:ro
+      # 与 go2rtc 共享同一份流配置，使新增/删除摄像头能同步写入 streams
+      - ./config/go2rtc.yaml:/config/go2rtc.yaml
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - OPENSIGHT_DATA_DIR=/data
       - OPENSIGHT_CONFIG=/app/config.yaml
+      - OPENSIGHT_GO2RTC_CONFIG=/config/go2rtc.yaml
       - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 

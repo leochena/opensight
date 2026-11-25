@@ -21,6 +21,9 @@ _MIGRATIONS = [
     ("persons", "species", "TEXT DEFAULT ''"),
     ("events", "subject_kind", "TEXT DEFAULT 'face'"),
     ("events", "video_path", "TEXT DEFAULT ''"),
+    ("cameras", "username", "TEXT DEFAULT ''"),
+    ("cameras", "password", "TEXT DEFAULT ''"),
+    ("cameras", "onvif_port", "INTEGER DEFAULT 80"),
 ]
 
 
