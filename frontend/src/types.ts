@@ -36,6 +36,7 @@ export interface SightEvent {
   subject_kind: 'face' | 'pet'
   similarity: number
   snapshot_url: string
+  video_url: string
   status: string
   note: string
   created_at?: string

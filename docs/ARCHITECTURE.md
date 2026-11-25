@@ -12,11 +12,12 @@
                               │   worker      │  拉流 → 人脸检测 → 特征提取 → 比对
                               │ (InsightFace) │  特征来自 data/gallery/*.npy
                               └───────┬───────┘
-                                      │ 写入事件
-                                      ▼
+                              │ 写入事件
+                              ▼
                               ┌───────────────┐
                               │  SQLite       │  data/opensight.db（本地）
                               │  + snapshots  │  data/snapshots/*.jpg
+                              │  + videos     │  data/videos/*.mp4（命中前后5秒）
                               └───────┬───────┘
                                       │ REST
                                       ▼
@@ -34,8 +35,9 @@
 
 1. **导入**：用户上传照片 → API → 提取特征向量 → 存 `.npy` + 原图到 `data/gallery/`
 2. **推理**：worker 按 `detect_every_n_frames` 抽帧 → 检测人脸 → 提取特征 → 与库内向量算余弦相似度
-3. **事件**：worker 按比对库类型分组（face / pet）分别调用对应引擎检测比对；相似度 ≥ 阈值且过冷却期 → 写 Event（带 `subject_kind`）→ 存快照 → `notifiers.dispatch()` 分发到所有启用通道
-4. **复核**：Web UI 展示候选事件，人工确认或忽略
+3. **事件**：worker 按比对库类型分组（face / pet）分别调用对应引擎检测比对；相似度 ≥ 阈值且过冷却期 → 写 Event（带 `subject_kind`）→ 存快照 → `notifiers.dispatch()` 分发到所有启用通道 → `recording.ClipRecorder` 取环形缓冲中的命中前帧 + 继续采命中后帧，异步导出 MP4 并回填 `Event.video_path`
+4. **留证**：worker 每帧写入 `FrameBuffer`（按时间裁剪、帧数硬上限）；命中时快照落 `data/snapshots/`、片段落 `data/videos/`，均由 FastAPI 静态挂载（`/api/snapshots`、`/api/videos`）
+5. **复核**：Web UI 展示候选事件，可播放/下载视频片段，人工确认或忽略
 
 ## 通知通道抽象
 
@@ -86,7 +88,8 @@ opensight/
 ├── data/                     运行时数据（gitignore，含隐私数据）
 │   ├── opensight.db          SQLite
 │   ├── gallery/              人员照片与特征向量
-│   └── snapshots/            事件快照
+│   ├── snapshots/            事件快照 *.jpg
+│   └── videos/               告警视频片段 *.mp4
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -98,6 +101,7 @@ opensight/
 │       ├── schemas.py        Pydantic
 │       ├── recognition.py    识别引擎抽象（人脸 + 宠物双引擎）
 │       ├── gallery.py        比对库操作
+│       ├── recording.py      环形帧缓冲 + 异步 MP4 录制
 │       ├── events.py         留存清理（通知入口转发到 notifiers）
 │       ├── notifiers/        多通道通知适配器 + 分发器
 │       └── worker.py         后台推理
@@ -114,6 +118,6 @@ opensight/
 ## 隐私设计
 
 - 推理阶段无外网调用（模型已在构建期固化进镜像，运行时零下载）；告警通道由用户显式启用后才会出站
-- 事件/快照自动过期清理
+- 事件/快照/视频片段自动过期清理（删除事件时同步删磁盘文件）
 - 审计日志 + 一键全量清除
 - 所有数据留在 `data/`，用户完全掌控

@@ -324,13 +324,16 @@ def list_events(limit: int = 100, status: str = ""):
             url = ""
             if e.snapshot_path and os.path.exists(e.snapshot_path):
                 url = "/api/snapshots/" + os.path.basename(e.snapshot_path)
+            video_url = ""
+            if getattr(e, "video_path", "") and os.path.exists(e.video_path):
+                video_url = "/api/videos/" + os.path.basename(e.video_path)
             out.append(schemas.EventOut(
                 id=e.id, camera_id=e.camera_id, camera_name=e.camera_name,
                 person_id=e.person_id, person_name=e.person_name,
                 gallery_id=e.gallery_id,
                 subject_kind=getattr(e, "subject_kind", "face") or "face",
                 similarity=e.similarity,
-                snapshot_url=url, status=e.status, note=e.note,
+                snapshot_url=url, video_url=video_url, status=e.status, note=e.note,
                 created_at=e.created_at,
             ))
         return out
@@ -371,6 +374,7 @@ def cleanup_events_now():
 
 os.makedirs(settings.snapshot_dir, exist_ok=True)
 app.mount("/api/snapshots", StaticFiles(directory=settings.snapshot_dir), name="snapshots")
+app.mount("/api/videos", StaticFiles(directory=settings.video_dir), name="videos")
 
 
 # ---------- 数据治理 ----------
@@ -397,7 +401,7 @@ def purge_all(confirm: str = ""):
         db.query(models.Gallery).delete()
         audit(db, "privacy.purge", "all data purged")
         db.commit()
-        for d in (settings.snapshot_dir,):
+        for d in (settings.snapshot_dir, settings.video_dir):
             for f in os.listdir(d):
                 try:
                     os.remove(os.path.join(d, f))

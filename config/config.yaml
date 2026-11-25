@@ -47,10 +47,15 @@ cameras:
 
 # 事件留存
 events:
-  # 事件快照与记录保留天数（到期自动清理）
+  # 事件快照/视频与记录保留天数（到期自动清理）
   retention_days: 30
   # 保存匹配帧快照到本地
   save_snapshot: true
+  # 保存告警视频片段（命中前后各5秒 MP4，异步录制，不影响识别）
+  save_video: true
+  video_before_seconds: 5
+  video_after_seconds: 5
+  video_fps: 12
   cooldown_seconds: 30
 
 # 告警通道：可同时启用多个。

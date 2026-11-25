@@ -56,6 +56,8 @@ class Event(Base):
     subject_kind = Column(String(20), default="face")
     similarity = Column(Float, default=0.0)
     snapshot_path = Column(String(500), default="")
+    # 告警视频片段（命中前后若干秒 MP4）
+    video_path = Column(String(500), default="")
     # candidate | acknowledged | dismissed
     status = Column(String(50), default="candidate")
     note = Column(Text, default="")

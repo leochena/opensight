@@ -3,13 +3,14 @@
 ## 前置条件
 
 - Docker 20.10+ 与 Docker Compose v2
-- Linux / macOS / Windows(WSL2) —— **推荐 Linux**
+- Linux / macOS / Windows —— **推荐 Linux**
 - 摄像头：支持 RTSP 的 IP 摄像头 / ONVIF 设备 / USB 摄像头
 - 可选：NVIDIA GPU（大幅提升识别速度）
 
-> 说明：docker-compose.yml 中 api / worker / go2rtc 使用 `network_mode: host`，
-> 这样 go2rtc 能直接发现局域网 ONVIF 设备。Windows 原生 Docker 的 host 网络支持有限，
-> 建议在 WSL2 中部署。
+> 网络说明：只有 go2rtc 用 `network_mode: host`（便于局域网 ONVIF 发现）；
+> worker / api / web 走 bridge 网络，worker 通过 `host.docker.internal:1984` 访问宿主机上的 go2rtc，
+> web 通过 nginx 的 `/api` 代理访问 `api:8000`。此方案已在 Windows Docker Desktop 上实测可用，
+> 无需 WSL2。
 
 ## 一、快速启动
 
@@ -113,11 +114,26 @@ curl -X POST http://localhost:8080/api/notifications/test
 
 完整配置步骤见 [NOTIFICATIONS.md](NOTIFICATIONS.md)。
 
+**告警视频片段（可选）**：命中时可自动录制前后各 5 秒的 MP4，存到 `data/videos/`，
+在"事件记录"点「录像」即可播放或下载。默认已开启，配置在 `config.yaml` 的 `events:` 段：
+
+```yaml
+events:
+  save_snapshot: true      # 命中单帧快照
+  save_video: true         # 命中前后片段 MP4
+  video_before_seconds: 5  # 命中前回放秒数（来自 worker 内存环形缓冲）
+  video_after_seconds: 5   # 命中后继续录制秒数
+  video_fps: 12            # 输出帧率
+```
+
+片段由 worker 的环形帧缓冲 + 异步录制生成（不依赖 go2rtc 服务端录像，也不是连续录像），
+录制在后台进行、不影响识别主循环；关闭 `save_video` 时只留快照。片段随事件一起按 `retention_days` 过期清理。
+
 ## 八、数据治理
 
 - 事件自动清理：`events.retention_days`（默认 30 天）
 - 一键清除全部数据：Web 界面"合规与隐私 → 清除所有本地数据"（需二次确认）
-- 所有数据位于 `data/` 目录，可直接备份或删除
+- 所有数据位于 `data/` 目录，可直接备份或删除；其中快照在 `data/snapshots/`、视频在 `data/videos/`
 
 ## 九、常见问题
 
@@ -134,6 +150,9 @@ WebRTC 需要 go2rtc 正确运行。检查 `docker compose logs go2rtc`，
 **Q: 界面显示引擎是 mock 怎么办？**
 说明真实模型加载失败自动降级了（默认镜像已内置模型，正常不应发生）。查日志：
 `docker compose logs worker | grep -i 降级`。常见原因是自定义了 `model`/`model_size` 指向镜像未内置的模型且容器无法联网下载。改回默认值或按 PETS.md 手动放置权重。mock 结果无意义。
+
+**Q: 事件里没有视频/快照？**
+视频与快照只在"相似度命中且过冷却期"时产生。确认：① 摄像头已启用且能正常拉流；② 比对库里已有照片；③ 阈值没设得过高。可在 worker 日志里看到命中记录。只有产生事件才会有对应文件。
 
 **Q: 多摄像头性能不足？**
 调大 `detect_every_n_frames`、使用 GPU/加速棒（Coral/Hailo）、

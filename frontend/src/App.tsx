@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound } from 'lucide-react'
+import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound, Video, X, Download } from 'lucide-react'
 import { api } from './api'
 import type { Camera, Config, Gallery, SightEvent } from './types'
 
@@ -273,8 +273,13 @@ function AddPerson({ gid, isPet, onAdded }: any) {
 /* ---------------- 事件 ---------------- */
 function Events() {
   const [events, setEvents] = useState<SightEvent[]>([])
+  const [playing, setPlaying] = useState<SightEvent | null>(null)
   const load = useCallback(() => api.events().then(setEvents).catch(() => {}), [])
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [load])
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 5000)
+    return () => clearInterval(t)
+  }, [load])
 
   return (
     <section>
@@ -283,7 +288,7 @@ function Events() {
         <button className="btn" onClick={() => api.cleanup().then(load)}><RefreshCw size={16} />清理过期</button>
       </div>
       {events.length === 0 ? (
-        <div className="empty"><Bell size={40} /><h3>暂无事件</h3><p className="muted">当摄像头画面与比对库产生相似候选时，会在此显示。</p></div>
+        <div className="empty"><Bell size={40} /><h3>暂无事件</h3><p className="muted">当摄像头画面与比对库产生相似候选时，会在此显示。命中会保存快照与前后各5秒的告警视频。</p></div>
       ) : (
         <div className="event-list">
           {events.map(e => (
@@ -297,11 +302,28 @@ function Events() {
                 <div className="muted small warn-note">AI 辅助提示 · 仅供人工复核，非身份认定</div>
               </div>
               <div className="event-actions">
+                {e.video_url && <button className="btn sm" onClick={() => setPlaying(e)}><Video size={14} />录像</button>}
                 <button className="btn sm" onClick={() => api.setEventStatus(e.id, 'acknowledged').then(load)}>已复核</button>
                 <button className="btn sm" onClick={() => api.setEventStatus(e.id, 'dismissed').then(load)}>忽略</button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {playing && (
+        <div className="modal-backdrop" onClick={() => setPlaying(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <strong><Video size={16} /> 告警录像 · {playing.person_name}</strong>
+              <button className="icon-btn" onClick={() => setPlaying(null)}><X size={18} /></button>
+            </div>
+            <video className="event-video" src={playing.video_url} controls autoPlay playsInline />
+            <div className="modal-foot">
+              <span className="muted small">命中前后各 5 秒 · {playing.camera_name}</span>
+              <a className="btn sm" href={playing.video_url} download><Download size={14} />下载</a>
+            </div>
+          </div>
         </div>
       )}
     </section>

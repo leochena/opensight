@@ -20,6 +20,7 @@ _MIGRATIONS = [
     ("galleries", "kind", "TEXT DEFAULT 'face'"),
     ("persons", "species", "TEXT DEFAULT ''"),
     ("events", "subject_kind", "TEXT DEFAULT 'face'"),
+    ("events", "video_path", "TEXT DEFAULT ''"),
 ]
 
 

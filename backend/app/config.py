@@ -24,6 +24,10 @@ DEFAULTS: Dict[str, Any] = {
     "events": {
         "retention_days": 30,
         "save_snapshot": True,
+        "save_video": True,
+        "video_before_seconds": 5,
+        "video_after_seconds": 5,
+        "video_fps": 12,
         "cooldown_seconds": 30,
         # 旧配置兼容字段（新配置请使用 notifications）
         "webhook_url": "",
@@ -82,6 +86,12 @@ class Settings:
     @property
     def snapshot_dir(self) -> str:
         p = os.path.join(self.data_dir, "snapshots")
+        os.makedirs(p, exist_ok=True)
+        return p
+
+    @property
+    def video_dir(self) -> str:
+        p = os.path.join(self.data_dir, "videos")
         os.makedirs(p, exist_ok=True)
         return p
 

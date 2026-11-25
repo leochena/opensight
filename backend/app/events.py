@@ -29,11 +29,12 @@ def cleanup(db: Session) -> int:
     old = db.query(models.Event).filter(models.Event.created_at < cutoff).all()
     count = 0
     for e in old:
-        if e.snapshot_path and os.path.exists(e.snapshot_path):
-            try:
-                os.remove(e.snapshot_path)
-            except OSError:
-                pass
+        for path in (e.snapshot_path, getattr(e, "video_path", "")):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         db.delete(e)
         count += 1
     db.commit()

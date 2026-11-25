@@ -1,5 +1,7 @@
 services:
   # 流媒体网关：ONVIF 发现 / RTSP 接入 / WebRTC 播放
+  # 保持 host 网络以便局域网发现；Windows Docker Desktop 下 ONVIF 广播可能受限，
+  # 但不影响人脸/宠物识别主链路（RTSP 直填地址即可）。
   go2rtc:
     image: alexxit/go2rtc:latest
     container_name: opensight-go2rtc
@@ -17,7 +19,6 @@ services:
       dockerfile: Dockerfile
     container_name: opensight-worker
     restart: unless-stopped
-    network_mode: host
     depends_on:
       - go2rtc
     volumes:
@@ -29,7 +30,13 @@ services:
       - OPENSIGHT_DATA_DIR=/data
       - OPENSIGHT_CONFIG=/app/config.yaml
       - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - OPENSIGHT_GO2RTC_API=http://127.0.0.1:1984
+      # go2rtc 在 host 网络，容器经 host.docker.internal 访问宿主机
+      - OPENSIGHT_GO2RTC_API=http://host.docker.internal:1984
+    # 关键：worker 必须跑推理循环，不能用 Dockerfile 默认的 uvicorn（会与 api 抢 8000 端口）
+    # 用 -m 以模块方式启动，worker.py 内的相对导入（from . import ...）才有效
+    command: ["python", "-m", "app.worker"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # 有 NVIDIA GPU 时取消下面注释（需安装 nvidia-container-toolkit）
     # deploy:
     #   resources:
@@ -46,7 +53,6 @@ services:
       dockerfile: Dockerfile
     container_name: opensight-api
     restart: unless-stopped
-    network_mode: host
     depends_on:
       - worker
     volumes:

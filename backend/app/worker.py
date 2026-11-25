@@ -4,16 +4,18 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
-from datetime import datetime
 
 import cv2
+import numpy as np
 
 from . import gallery, models
 from .config import settings
 from .database import SessionLocal
 from .events import notify
 from .recognition import engine, engine_for_kind
+from .recording import FrameBuffer, build_recorder
 
 log = logging.getLogger("opensight.worker")
 
@@ -43,6 +45,37 @@ def run_camera(cam: models.Camera) -> None:
     save_snap = bool(settings["events"].get("save_snapshot", True))
     gallery_ids = [int(x) for x in (cam.gallery_ids or "").split(",") if x.strip()] or None
 
+    # 视频录制：环形缓冲存最近 N 秒所有帧，命中时异步导出前后片段
+    before_sec = float(settings["events"].get("video_before_seconds", 5))
+    recorder = build_recorder()
+    frame_buf = FrameBuffer(seconds=max(1.0, before_sec), max_frames=300)
+    # 录像线程从这里取命中之后的实时帧；用锁保护 cap 的交替读取
+    cap_lock = threading.Lock()
+    latest_frame: dict[str, np.ndarray | None] = {"frame": None}
+
+    def frame_source():
+        # 录像线程不直接读 cap（避免与主循环竞争），而是取主循环更新的最新帧
+        f = latest_frame["frame"]
+        if f is None:
+            return None
+        return f.copy()
+
+    def attach_video(event_id: int, path: str | None) -> None:
+        if not path:
+            return
+        try:
+            dbv = SessionLocal()
+            try:
+                ev = dbv.query(models.Event).filter(models.Event.id == event_id).first()
+                if ev:
+                    ev.video_path = path
+                    dbv.commit()
+                    log.info("告警视频已保存: %s", path)
+            finally:
+                dbv.close()
+        except Exception as e:
+            log.warning("写入视频路径失败: %s", e)
+
     frame_i = 0
     last_hit: dict[int, float] = {}
     try:
@@ -51,9 +84,14 @@ def run_camera(cam: models.Camera) -> None:
             if not ok:
                 time.sleep(1)
                 # 尝试重连
-                cap.release()
-                cap = cv2.VideoCapture(url)
+                with cap_lock:
+                    cap.release()
+                    cap = cv2.VideoCapture(url)
                 continue
+            # 每帧进缓冲，保证命中时"事前"画面完整
+            now_ts = time.time()
+            frame_buf.push(frame, now_ts)
+            latest_frame["frame"] = frame
             frame_i += 1
             if frame_i % every_n != 0:
                 continue
@@ -111,6 +149,16 @@ def run_camera(cam: models.Camera) -> None:
                             db.commit()
                             db.refresh(ev)
                             log.info("候选匹配 %s / %s(%s) = %.3f", cam.name, best.name, kind, best_score)
+
+                            # 异步录制告警视频片段（不阻塞识别循环）
+                            if recorder:
+                                history = frame_buf.snapshot()
+                                clip_name = f"{int(now)}_{cam.id}_{best.id}.mp4"
+                                recorder.record_async(
+                                    clip_name, history, frame_source,
+                                    on_done=lambda p, eid=ev.id: attach_video(eid, p),
+                                )
+
                             notify(ev)
             finally:
                 db.close()

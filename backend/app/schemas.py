@@ -65,6 +65,7 @@ class EventOut(BaseModel):
     subject_kind: str = "face"
     similarity: float = 0.0
     snapshot_url: str = ""
+    video_url: str = ""
     status: str = "candidate"
     note: str = ""
     created_at: Optional[datetime] = None
