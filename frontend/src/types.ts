@@ -36,6 +36,25 @@ export interface OnvifDevice {
   rtsp_url: string
 }
 
+export interface ScanDevice {
+  address: string
+  port: number
+  protocol: 'onvif' | 'rtsp'
+  manufacturer: string
+  model: string
+  rtsp_url: string
+  source: string
+  needs_auth: boolean
+  name: string
+}
+
+export interface ScanResult {
+  subnet: string
+  scanned: number
+  devices: ScanDevice[]
+  elapsed: number
+}
+
 export interface SightEvent {
   id: number
   camera_id: number

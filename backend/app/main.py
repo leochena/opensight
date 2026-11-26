@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import time
 import uuid
 from datetime import datetime
 from typing import List
@@ -22,6 +23,7 @@ from .events import cleanup as cleanup_events
 from .notifiers import dispatch_test, notifier_names
 from .onvif import build_source_for_camera
 from .recognition import engine, pet_engine
+from .scan import hit_to_source, local_subnet, scan_network
 
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("opensight.api")
@@ -335,6 +337,88 @@ def discover_onvif(
     except ImportError:
         log.warning("onvif-zeep 未安装，ONVIF 发现不可用")
     return out
+
+
+# ---------- 局域网扫描（自动识别网段 / 指定 IP 段） ----------
+@app.get("/api/scan/subnet")
+def scan_subnet():
+    """返回自动推断的本机网段，供前端预填扫描目标。"""
+    return {"subnet": local_subnet()}
+
+
+@app.post("/api/scan", response_model=schemas.ScanResult)
+def scan_cameras(payload: schemas.ScanRequest):
+    """并发扫描网段，探测 ONVIF / RTSP 摄像头。
+
+    只读探测，不会添加任何摄像头；结果供前端勾选后调用批量添加。
+    """
+    started = time.time()
+    try:
+        hits, scanned = scan_network(
+            payload.target, payload.username, payload.password,
+            timeout=payload.timeout, concurrency=payload.concurrency,
+            protocols=payload.protocols,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception("扫描失败")
+        raise HTTPException(500, f"扫描失败: {e}")
+
+    devices = []
+    for h in hits:
+        label = " ".join(x for x in (h.manufacturer, h.model) if x).strip()
+        devices.append(schemas.ScanDeviceOut(
+            address=h.address, port=h.port, protocol=h.protocol,
+            manufacturer=h.manufacturer, model=h.model,
+            rtsp_url=h.rtsp_url,
+            source=hit_to_source(h, payload.username, payload.password),
+            needs_auth=h.needs_auth,
+            name=label or f"{h.protocol.upper()} {h.address}",
+        ))
+    return schemas.ScanResult(
+        subnet=payload.target.strip() or local_subnet(),
+        scanned=scanned, devices=devices, elapsed=round(time.time() - started, 2),
+    )
+
+
+@app.post("/api/cameras/bulk", response_model=List[schemas.CameraOut])
+def bulk_create_cameras(payload: schemas.BulkCameraRequest):
+    """批量添加摄像头（扫描结果一键导入）。单条失败不影响其他条目。"""
+    db = SessionLocal()
+    created: list[schemas.CameraOut] = []
+    try:
+        for item in payload.cameras:
+            try:
+                final_source = build_source_for_camera(
+                    item.source, item.kind, item.username, item.password, item.onvif_port,
+                )
+                c = models.Camera(
+                    name=item.name or f"{item.kind.upper()} {item.source}",
+                    source=final_source, kind=item.kind,
+                    username=item.username, password=item.password,
+                    onvif_port=item.onvif_port,
+                    gallery_ids=",".join(str(x) for x in payload.gallery_ids),
+                    enabled=1,
+                )
+                db.add(c)
+                db.commit()
+                db.refresh(c)
+                audit(db, "camera.add", f"{c.name} [bulk scan]")
+                db.commit()
+                created.append(schemas.CameraOut(
+                    id=c.id, name=c.name, source=c.source, kind=c.kind,
+                    enabled=True, username=c.username, onvif_port=c.onvif_port,
+                    zone=None, gallery_ids=payload.gallery_ids,
+                ))
+            except Exception as e:
+                log.warning("批量添加摄像头 %s 失败: %s", item.name, e)
+                db.rollback()
+        if created:
+            sync_go2rtc(db)
+        return created
+    finally:
+        db.close()
 
 
 # ---------- 事件 ----------

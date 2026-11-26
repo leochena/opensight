@@ -1,4 +1,4 @@
-import type { Camera, Config, Gallery, OnvifDevice, Person, SightEvent } from './types'
+import type { Camera, Config, Gallery, OnvifDevice, Person, ScanDevice, ScanResult, SightEvent } from './types'
 
 const B = '/api'
 
@@ -48,6 +48,21 @@ export const api = {
     const q = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&port=${port}`
     return req<OnvifDevice[]>(`/onvif/discover?${q}`)
   },
+  scanSubnet: () => req<{ subnet: string }>('/scan/subnet'),
+  scanCameras: (data: {
+    target: string; username?: string; password?: string
+    port?: number; timeout?: number; concurrency?: number; protocols?: string[]
+  }) => req<ScanResult>('/scan', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }),
+  bulkAddCameras: (data: {
+    cameras: { name: string; source: string; kind: string; username?: string; password?: string; onvif_port?: number }[]
+    gallery_ids?: number[]
+  }) => req<Camera[]>('/cameras/bulk', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }),
 
   events: (limit = 100) => req<SightEvent[]>(`/events?limit=${limit}`),
   setEventStatus: (id: number, status: string, note = '') =>

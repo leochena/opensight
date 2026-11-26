@@ -90,3 +90,47 @@ class OnvifDeviceOut(BaseModel):
     manufacturer: str = ""
     model: str = ""
     rtsp_url: str = ""
+
+
+# ---------- 局域网扫描 ----------
+class ScanRequest(BaseModel):
+    target: str = ""              # CIDR / IP 范围 / 单 IP；空=自动识别本机网段
+    username: str = ""
+    password: str = ""
+    port: int = 80                # ONVIF 端口提示（扫描仍会覆盖常见端口）
+    timeout: float = 1.0
+    concurrency: int = 64
+    protocols: List[str] = ["onvif", "rtsp"]
+
+
+class ScanDeviceOut(BaseModel):
+    address: str
+    port: int
+    protocol: str
+    manufacturer: str = ""
+    model: str = ""
+    rtsp_url: str = ""
+    source: str = ""
+    needs_auth: bool = False
+    name: str = ""                # 建议名称，供批量添加预填
+
+
+class ScanResult(BaseModel):
+    subnet: str                   # 实际扫描的网段/目标
+    scanned: int
+    devices: List[ScanDeviceOut] = []
+    elapsed: float = 0.0
+
+
+class BulkCameraItem(BaseModel):
+    name: str
+    source: str
+    kind: str
+    username: str = ""
+    password: str = ""
+    onvif_port: int = 80
+
+
+class BulkCameraRequest(BaseModel):
+    cameras: List[BulkCameraItem]
+    gallery_ids: List[int] = []

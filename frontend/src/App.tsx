@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound, Video, X, Download } from 'lucide-react'
 import { api } from './api'
-import type { Camera, Config, Gallery, OnvifDevice, SightEvent } from './types'
+import type { Camera, Config, Gallery, OnvifDevice, ScanDevice, SightEvent } from './types'
 
 type Tab = 'dashboard' | 'galleries' | 'events' | 'privacy'
 
@@ -75,7 +75,25 @@ function Dashboard() {
   const [discoverMsg, setDiscoverMsg] = useState('')
   const [err, setErr] = useState('')
 
+  // 局域网扫描状态
+  const [showScan, setShowScan] = useState(false)
+  const [scanTarget, setScanTarget] = useState('')
+  const [scanUser, setScanUser] = useState('')
+  const [scanPass, setScanPass] = useState('')
+  const [scanProtocols, setScanProtocols] = useState<string[]>(['onvif', 'rtsp'])
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<ScanDevice[]>([])
+  const [scanInfo, setScanInfo] = useState('')
+  const [selected, setSelected] = useState<Record<number, boolean>>({})
+
   const isOnvif = kind === 'onvif'
+
+  // 打开扫描面板时预填自动识别的网段
+  useEffect(() => {
+    if (showScan && !scanTarget) {
+      api.scanSubnet().then(r => setScanTarget(r.subnet)).catch(() => {})
+    }
+  }, [showScan, scanTarget])
 
   const load = useCallback(() => api.cameras().then(setCameras).catch(e => setErr(e.message)), [])
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t) }, [load])
@@ -109,12 +127,102 @@ function Dashboard() {
     if (!name) setName([d.manufacturer, d.model].filter(Boolean).join(' ') || 'ONVIF 摄像头')
   }
 
+  const runScan = async () => {
+    setScanning(true); setErr(''); setScanInfo(''); setScanResult([]); setSelected({})
+    try {
+      const r = await api.scanCameras({
+        target: scanTarget, username: scanUser, password: scanPass,
+        protocols: scanProtocols, timeout: 1.0, concurrency: 64,
+      })
+      setScanResult(r.devices)
+      const picked: Record<number, boolean> = {}
+      r.devices.forEach((_, i) => { picked[i] = true })
+      setSelected(picked)
+      setScanInfo(`已扫描 ${r.scanned} 个地址，耗时 ${r.elapsed}s，发现 ${r.devices.length} 台设备`)
+    } catch (e: any) {
+      setErr('扫描失败：' + e.message)
+    } finally { setScanning(false) }
+  }
+
+  const toggleProtocol = (p: string) => {
+    setScanProtocols(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
+  }
+
+  const bulkAdd = async () => {
+    const picked = scanResult.filter((_, i) => selected[i])
+    if (!picked.length) { setErr('请先勾选要添加的设备'); return }
+    try {
+      const created = await api.bulkAddCameras({
+        cameras: picked.map(d => ({
+          name: d.name, source: d.source, kind: d.protocol,
+          username: scanUser, password: scanPass,
+          onvif_port: d.port,
+        })),
+      })
+      setScanInfo(`已添加 ${created.length} 台摄像头`)
+      setShowScan(false); setScanResult([]); load()
+    } catch (e: any) {
+      setErr('批量添加失败：' + e.message)
+    }
+  }
+
   return (
     <section>
       <div className="page-head">
         <div><h1>实时预览</h1><p className="muted">摄像头画面在本地处理，不会上传到任何云端</p></div>
-        <button className="btn primary" onClick={() => setShowAdd(!showAdd)}><Plus size={16} />添加摄像头</button>
+        <div className="page-head-actions">
+          <button className="btn" onClick={() => { setShowScan(!showScan); if (showAdd) setShowAdd(false) }}>
+            <Search size={16} />扫描摄像头
+          </button>
+          <button className="btn primary" onClick={() => { setShowAdd(!showAdd); if (showScan) setShowScan(false) }}>
+            <Plus size={16} />添加摄像头
+          </button>
+        </div>
       </div>
+
+      {showScan && (
+        <div className="card form-card scan-card">
+          <h3>扫描局域网摄像头</h3>
+          <p className="muted onvif-hint">自动扫描同一网段的 ONVIF / RTSP 设备，勾选后一键批量添加。仅探测本地网络，不访问公网。</p>
+          <label>扫描目标
+            <input value={scanTarget} onChange={e => setScanTarget(e.target.value)}
+              placeholder="192.168.1.0/24，或 192.168.1.1-192.168.1.50，或单个 IP" />
+          </label>
+          <div className="form-row">
+            <label>用户名<input value={scanUser} onChange={e => setScanUser(e.target.value)} placeholder="通常为 admin（可留空）" autoComplete="off" /></label>
+            <label>密码<input type="password" value={scanPass} onChange={e => setScanPass(e.target.value)} placeholder="设备密码（可留空）" autoComplete="new-password" /></label>
+          </div>
+          <div className="scan-protocols">
+            <span className="muted">协议：</span>
+            <label className="chk"><input type="checkbox" checked={scanProtocols.includes('onvif')} onChange={() => toggleProtocol('onvif')} /> ONVIF</label>
+            <label className="chk"><input type="checkbox" checked={scanProtocols.includes('rtsp')} onChange={() => toggleProtocol('rtsp')} /> RTSP</label>
+          </div>
+          <button className="btn onvif-discover" onClick={runScan} disabled={scanning || !scanProtocols.length}>
+            <Search size={14} />{scanning ? '扫描中…' : '开始扫描'}
+          </button>
+          {scanInfo && <p className="muted onvif-hint">{scanInfo}</p>}
+          {scanResult.length > 0 && (
+            <>
+              <div className="scan-device-list">
+                {scanResult.map((d, i) => (
+                  <label className="scan-device" key={`${d.address}-${d.protocol}-${d.port}`}>
+                    <input type="checkbox" checked={!!selected[i]} onChange={() => setSelected(prev => ({ ...prev, [i]: !prev[i] }))} />
+                    <span className="scan-device-body">
+                      <strong>{d.name}</strong>
+                      <span className="muted">{d.protocol.toUpperCase()} · {d.address}:{d.port}{d.needs_auth ? ' · 需认证' : ''}</span>
+                      <code>{d.source}</code>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="form-actions">
+                <button className="btn" onClick={() => setShowScan(false)}>取消</button>
+                <button className="btn primary" onClick={bulkAdd}><Plus size={14} />添加选中设备</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {showAdd && (
         <div className="card form-card">
