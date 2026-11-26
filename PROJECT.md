@@ -91,7 +91,7 @@ opensight/
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
 - **视频接口端到端验证**：造测试事件 + MP4 后 `/api/events` 正确返回 `video_url`，`GET /api/videos/verify_demo.mp4` HTTP 200（17740 bytes）；验证数据已通过 `/api/privacy/purge-all` 清理，`/api/events` 恢复空、`data/videos/` 为空
 - **Windows Docker Desktop 运行验证**：修复 worker 启动方式（`python -m app.worker`，否则相对导入失败）、worker 与 api 抢 8000 端口、api/worker/web 改 bridge 网络、nginx `/api` 代理指向服务名 `api:8000`；4 容器全部 Up，`/api/health` 返回 `engine: insightface`，`/api/config` 显示 `pet_engine: pet-onnx`
-- **WebRTC 实时预览端到端验证**：go2rtc 由 host 改 bridge + 显式端口映射，worker 改 `http://go2rtc:1984`，nginx 新增 `/rtc/` 反代与 WebSocket Upgrade。发现并修复播放器信令协议错误：原代码用 `webrtc`+`data/sdp/candidate`，go2rtc 官方实际要求 `webrtc/offer` / `webrtc/answer` / `webrtc/candidate` 且字段为 `value`；修正并去掉公网 STUN 后，重启 go2rtc 使消费者归零，打开应用页面产生新消费者 `id=31`（`ws+udp`），`senders[].codec.codec_name=h264`，`bytes_send` 实测达 `1944230`，确认浏览器正在接收视频
+- **WebRTC 实时预览端到端验证**：go2rtc 由 host 改 bridge + 显式端口映射，worker 改 `http://go2rtc:1984`，nginx 新增 `/rtc/` 反代与 WebSocket Upgrade。发现并修复播放器信令协议错误：原代码用 `webrtc`+`data/sdp/candidate`，go2rtc 官方实际要求 `webrtc/offer` / `webrtc/answer` / `webrtc/candidate` 且字段为 `value`；修正并去掉公网 STUN 后，重启 go2rtc 使消费者归零，打开应用页面产生新消费者 `id=31`（`ws+udp`），`senders[].codec.codec_name=h264`，`bytes_send` 实测达 `1944230`，确认浏览器正在接收视频；随后 registry 网络恢复，完整重建 web/api/worker 镜像并用新镜像 recreate 容器：新镜像内 web 资源为 `index-D5IpTjQK.js`、api/worker 均含 `OPENSIGHT_LAN_SUBNET` 扫描代码，重建后再次打开页面产生消费者 `id=65`，`bytes_send` 从 `13616` 增至 `611013`
 
 ## 启动方式
 
