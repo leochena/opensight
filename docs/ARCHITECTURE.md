@@ -6,29 +6,30 @@
 ┌──────────────┐   RTSP/ONVIF   ┌──────────┐
 │  摄像头       │ ──────────────► │  go2rtc  │  流中转 / WebRTC / 多协议接入
 └──────────────┘                └────┬─────┘
-                                      │ /api/stream?src=
-                                      ▼
-                              ┌───────────────┐
-                              │   worker      │  拉流 → 人脸检测 → 特征提取 → 比对
-                              │ (InsightFace) │  特征来自 data/gallery/*.npy
-                              └───────┬───────┘
-                              │ 写入事件
-                              ▼
-                              ┌───────────────┐
-                              │  SQLite       │  data/opensight.db（本地）
-                              │  + snapshots  │  data/snapshots/*.jpg
-                              │  + videos     │  data/videos/*.mp4（命中前后5秒）
-                              └───────┬───────┘
-                                      │ REST
-                                      ▼
-                              ┌───────────────┐
-                              │   FastAPI     │  :8000  API
-                              └───────┬───────┘
-                                      │ /api 代理
-                                      ▼
-                              ┌───────────────┐
-                              │  React + Nginx│  :8080  Web UI
-                              └───────────────┘
+                    ▲                 │ /api/stream?src=
+                    │ WebRTC 视频轨    ▼
+                    │          ┌───────────────┐
+                    │          │   worker      │  拉流 → 人脸/宠物检测 → 特征提取 → 比对
+                    │          │ (InsightFace) │  特征来自 data/gallery/*.npy
+                    │          └───────┬───────┘
+                    │                  │ 写入事件
+                    │                  ▼
+                    │          ┌───────────────┐
+                    │          │  SQLite       │  data/opensight.db（本地）
+                    │          │  + snapshots  │  data/snapshots/*.jpg
+                    │          │  + videos     │  data/videos/*.mp4（命中前后5秒）
+                    │          └───────┬───────┘
+                    │                  │ REST
+                    │                  ▼
+                    │          ┌───────────────┐
+                    │          │   FastAPI     │  :8000  API
+                    │          └───────┬───────┘
+                    │                  │ /api 代理
+                    ▼                  ▼
+         ┌────────────────────────────────────┐
+         │  React + Nginx :8080  Web UI       │
+         │  /rtc/ → go2rtc:1984（WebSocket）  │
+         └────────────────────────────────────┘
 ```
 
 ## 数据流
@@ -38,6 +39,19 @@
 3. **事件**：worker 按比对库类型分组（face / pet）分别调用对应引擎检测比对；相似度 ≥ 阈值且过冷却期 → 写 Event（带 `subject_kind`）→ 存快照 → `notifiers.dispatch()` 分发到所有启用通道 → `recording.ClipRecorder` 取环形缓冲中的命中前帧 + 继续采命中后帧，异步导出 MP4 并回填 `Event.video_path`
 4. **留证**：worker 每帧写入 `FrameBuffer`（按时间裁剪、帧数硬上限）；命中时快照落 `data/snapshots/`、片段落 `data/videos/`，均由 FastAPI 静态挂载（`/api/snapshots`、`/api/videos`）
 5. **复核**：Web UI 展示候选事件，可播放/下载视频片段，人工确认或忽略
+
+## 实时预览链路
+
+预览与识别解耦，二者都从 go2rtc 取同一路流：
+
+1. API 在新增/删除摄像头时把流同步到 `config/go2rtc.yaml`，流名为 `cam_<id>`
+2. `frontend/src/StreamPlayer.tsx` 建立 `RTCPeerConnection`，为每路流添加 `recvonly` 的 video/audio transceiver
+3. WebSocket 信令走同源 `/rtc/api/ws?src=cam_<id>`，由 nginx 反代至 `go2rtc:1984`，并开启 `Upgrade` / `Connection: upgrade`
+4. 按 go2rtc 官方协议交换三种消息：`webrtc/offer`（带 SDP `value`）、`webrtc/answer`、`webrtc/candidate`
+5. 浏览器直接解码收到的 H.264 视频轨；`iceServers` 为空，不经过公网 STUN，候选地址只在本地/内网交换
+
+该链路已在 Windows Docker Desktop 上实测：打开应用页面后 `/rtc/api/streams` 中出现新的
+`consumers`，`senders[].codec.codec_name=h264` 且 `bytes_send` 持续增长。预览失败不影响 worker 比对。
 
 ## 通知通道抽象
 
@@ -105,7 +119,11 @@ opensight/
 │       ├── events.py         留存清理（通知入口转发到 notifiers）
 │       ├── notifiers/        多通道通知适配器 + 分发器
 │       └── worker.py         后台推理
-└── frontend/                 React + Vite + Nginx
+├── frontend/                 React + Vite + Nginx
+│   ├── src/App.tsx           四个页面与摄像头/扫描面板
+│   ├── src/StreamPlayer.tsx  go2rtc WebRTC 播放器（无 STUN）
+│   └── nginx.conf            /api 与 /rtc 反代（含 WebSocket Upgrade）
+└── scripts/setup.sh          一键初始化
 ```
 
 ## 扩展建议

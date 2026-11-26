@@ -80,7 +80,16 @@ cameras:
 
 ## 画面预览说明
 
-Web 界面的实时预览通过 go2rtc 的 WebRTC/MSE 提供。若预览打不开：
-- 确认 go2rtc 容器运行正常
-- 确认浏览器允许 WebRTC
-- 预览失败不影响后台人脸比对（worker 直接读 RTSP）
+Web 界面的"实时预览"是**真正的 WebRTC 播放器**，不是静态占位图：
+
+- 前端组件 `frontend/src/StreamPlayer.tsx` 为每台启用的摄像头建立 `RTCPeerConnection`
+- 信令走同源 `/rtc/api/ws?src=cam_<摄像头ID>`，由 nginx 反代到 go2rtc（支持 WebSocket Upgrade）
+- 流名 `cam_<id>` 由后端在添加摄像头时自动写入 `config/go2rtc.yaml`
+- 视频轨由浏览器直接解码 H.264；播放器 `iceServers` 为空，**不使用公网 STUN**
+- 可在 `http://localhost:8080/rtc/api/streams` 看到 `consumers` 与持续增长的 `bytes_send`
+
+若预览打不开：
+- 确认摄像头状态为"运行中"，且 `/rtc/api/streams` 中对应流存在
+- 确认 go2rtc 容器运行正常，1984/8554/8555/8556 端口未被占用
+- 确认浏览器支持 WebRTC 与 H.264（Chrome / Edge 默认支持）
+- 预览失败不影响后台人脸/宠物比对（worker 通过 `http://go2rtc:1984` 直接拉流）

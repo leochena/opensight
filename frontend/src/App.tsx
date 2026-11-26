@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Camera as CameraIcon, Images, Bell, ShieldCheck, Activity, Plus, Trash2, Play, Square, RefreshCw, Search, AlertTriangle, PawPrint, UserRound, Video, X, Download } from 'lucide-react'
 import { api } from './api'
+import StreamPlayer from './StreamPlayer'
 import type { Camera, Config, Gallery, OnvifDevice, ScanDevice, SightEvent } from './types'
 
 type Tab = 'dashboard' | 'galleries' | 'events' | 'privacy'
@@ -291,11 +292,15 @@ function Dashboard() {
                 <strong>{c.name}</strong>
               </div>
               <div className="cam-preview">
-                <div className="cam-placeholder">
-                  <Play size={28} />
-                  <span>实时画面由 go2rtc / WebRTC 提供</span>
-                  <code>{c.source}</code>
-                </div>
+                {c.enabled ? (
+                  <StreamPlayer stream={`cam_${c.id}`} enabled={true} />
+                ) : (
+                  <div className="cam-placeholder">
+                    <Play size={28} />
+                    <span>摄像头已暂停</span>
+                    <code>{c.source}</code>
+                  </div>
+                )}
               </div>
               <div className="cam-foot">
                 <button className="btn sm" onClick={() => api.toggleCamera(c.id).then(load)}>

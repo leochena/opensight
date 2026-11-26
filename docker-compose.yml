@@ -1,12 +1,18 @@
 services:
-  # 流媒体网关：ONVIF 发现 / RTSP 接入 / WebRTC 播放
-  # 保持 host 网络以便局域网发现；Windows Docker Desktop 下 ONVIF 广播可能受限，
-  # 但不影响人脸/宠物识别主链路（RTSP 直填地址即可）。
+  # 流媒体网关：RTSP 接入 / WebRTC 播放 / ONVIF 取流
+  # 使用 bridge + 显式端口映射，使 web/worker 容器能通过服务名访问，
+  # 浏览器也能经 nginx 反代或宿主机端口访问 WebRTC 预览。
+  # ONVIF 组播发现会受限，改用 OpenSight 的单播网段扫描替代。
   go2rtc:
     image: alexxit/go2rtc:latest
     container_name: opensight-go2rtc
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "1984:1984"          # HTTP API + WebRTC 信令
+      - "8554:8554"          # RTSP 服务
+      - "8555:8555/tcp"      # WebRTC
+      - "8555:8555/udp"
+      - "8556:8556/udp"      # WebRTC UDP 候选端口
     volumes:
       - ./config/go2rtc.yaml:/config/go2rtc.yaml
     environment:
@@ -30,8 +36,8 @@ services:
       - OPENSIGHT_DATA_DIR=/data
       - OPENSIGHT_CONFIG=/app/config.yaml
       - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
-      # go2rtc 在 host 网络，容器经 host.docker.internal 访问宿主机
-      - OPENSIGHT_GO2RTC_API=http://host.docker.internal:1984
+      # go2rtc 走 bridge，容器间用服务名互访
+      - OPENSIGHT_GO2RTC_API=http://go2rtc:1984
     # 关键：worker 必须跑推理循环，不能用 Dockerfile 默认的 uvicorn（会与 api 抢 8000 端口）
     # 用 -m 以模块方式启动，worker.py 内的相对导入（from . import ...）才有效
     command: ["python", "-m", "app.worker"]
@@ -65,7 +71,11 @@ services:
       - OPENSIGHT_DATA_DIR=/data
       - OPENSIGHT_CONFIG=/app/config.yaml
       - OPENSIGHT_GO2RTC_CONFIG=/config/go2rtc.yaml
+      # 局域网扫描默认网段；留空则尝试从 host.docker.internal 推断宿主机网段
+      - OPENSIGHT_LAN_SUBNET=${LAN_SUBNET:-}
       - OPENSIGHT_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   # Web 前端

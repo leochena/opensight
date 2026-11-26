@@ -12,12 +12,12 @@ from __future__ import annotations
 import concurrent.futures
 import ipaddress
 import logging
+import os
 import re
 import socket
-import time
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
 log = logging.getLogger("opensight.scan")
@@ -53,43 +53,70 @@ class ScanHit:
     needs_auth: bool = False
 
 
-def local_subnet() -> str:
-    """推断本机所在网段（CIDR）。
+def _is_docker_bridge(ip: str) -> bool:
+    """判断 IP 是否落在 Docker 默认网桥段（172.16-31.x.x）或本机回环。"""
+    try:
+        a = ipaddress.ip_address(ip)
+        return (
+            a.is_loopback
+            or (a.version == 4 and a.packed[0] == 172 and 16 <= a.packed[1] <= 31)
+        )
+    except ValueError:
+        return False
 
-    优先读默认路由的源地址；在 Docker 容器里 gethostbyname 得到的是容器 IP，
-    和宿主机局域网不同段，因此尽力从 /proc/net/route 或常见私网网关推断。
-    返回字符串，失败返回 '192.168.1.0/24' 作为保守默认。
+
+def local_subnet() -> str:
+    """推断宿主机所在的局域网段（CIDR）。
+
+    在 Docker 容器里，默认路由/主机名解析/UDP 出口拿到的都是容器网桥 IP
+    （172.18.x.x），不是摄像头所在的宿主机局域网。因此按以下优先级：
+      1. 环境变量 OPENSIGHT_LAN_SUBNET（推荐在 compose 里显式指定）
+      2. host.docker.internal 解析出的宿主机 IP（Linux 加 host-gateway 映射后可用）
+      3. 非 Docker 网段的主机名解析 / UDP 出口 IP
+      4. 保守默认 192.168.1.0/24
     """
-    # 1) 默认路由：Linux 容器里读 /proc/net/route
+    # 1) 显式配置优先
+    explicit = os.getenv("OPENSIGHT_LAN_SUBNET", "").strip()
+    if explicit:
+        try:
+            return str(ipaddress.ip_network(explicit, strict=False))
+        except ValueError:
+            log.warning("OPENSIGHT_LAN_SUBNET=%r 非法，忽略", explicit)
+
+    # 2) 宿主机网关别名（compose 已配置 extra_hosts: host-gateway）
+    try:
+        host_ip = socket.gethostbyname("host.docker.internal")
+        if host_ip and not _is_docker_bridge(host_ip):
+            return str(ipaddress.ip_network(f"{host_ip}/24", strict=False))
+    except OSError:
+        pass
+
+    # 3) 主机名解析 / UDP 出口，跳过 Docker 网桥段
+    candidates: list[str] = []
+    try:
+        candidates.append(socket.gethostbyname(socket.gethostname()))
+    except OSError:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        candidates.append(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    for ip in candidates:
+        if ip and not _is_docker_bridge(ip):
+            return str(ipaddress.ip_network(f"{ip}/24", strict=False))
+
+    # 4) 最后才读容器默认路由（结果可能是 Docker 网桥，但聊胜于无）
     try:
         with open("/proc/net/route", "r", encoding="utf-8") as f:
             for line in f.readlines()[1:]:
                 parts = line.split()
-                if len(parts) >= 3 and parts[1] == "00000000":  # destination 0.0.0.0
+                if len(parts) >= 3 and parts[1] == "00000000":
                     gw = socket.inet_ntoa(bytes.fromhex(parts[2])[::-1])
-                    if gw and gw != "0.0.0.0":
+                    if gw and gw != "0.0.0.0" and not _is_docker_bridge(gw):
                         return str(ipaddress.ip_network(f"{gw}/24", strict=False))
-    except Exception:
-        pass
-
-    # 2) 主机名解析
-    try:
-        ip = socket.gethostbyname(socket.gethostname())
-        n = ipaddress.ip_network(f"{ip}/24", strict=False)
-        if not n.is_loopback:
-            return str(n)
-    except Exception:
-        pass
-
-    # 3) UDP connect 不会真正发包，但能让内核选出出口 IP
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        n = ipaddress.ip_network(f"{ip}/24", strict=False)
-        if not n.is_loopback:
-            return str(n)
     except Exception:
         pass
 

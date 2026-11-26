@@ -75,6 +75,10 @@ label.scan-device>input{width:auto;margin-top:3px}
 .cam-preview{aspect-ratio:16/9;background:#101923;display:flex;align-items:center;justify-content:center}
 .cam-placeholder{display:flex;flex-direction:column;align-items:center;gap:8px;color:#7d8b9c;font-size:12px;text-align:center;padding:20px}
 .cam-placeholder code{color:#4a9d86;background:#16232f;padding:4px 8px;border-radius:6px;font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stream-player{position:relative;width:100%;height:100%;min-height:180px;background:#101923}
+.stream-video{width:100%;height:100%;object-fit:contain;display:block}
+.stream-status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#9fb0c0;font-size:12.5px;text-align:center;padding:16px;background:rgba(16,25,35,.75)}
+.stream-status small{color:#7d8b9c;font-size:11px;max-width:90%;word-break:break-all}
 .cam-foot{display:flex;gap:8px;padding:12px 15px}
 .two-col{display:grid;grid-template-columns:1fr 1.3fr;gap:18px}
 .list{display:flex;flex-direction:column;gap:7px}

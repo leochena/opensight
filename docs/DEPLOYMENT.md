@@ -7,10 +7,11 @@
 - 摄像头：支持 RTSP 的 IP 摄像头 / ONVIF 设备 / USB 摄像头
 - 可选：NVIDIA GPU（大幅提升识别速度）
 
-> 网络说明：只有 go2rtc 用 `network_mode: host`（便于局域网 ONVIF 发现）；
-> worker / api / web 走 bridge 网络，worker 通过 `host.docker.internal:1984` 访问宿主机上的 go2rtc，
-> web 通过 nginx 的 `/api` 代理访问 `api:8000`。此方案已在 Windows Docker Desktop 上实测可用，
-> 无需 WSL2。
+> 网络说明：go2rtc / worker / api / web **全部走 bridge 网络**。
+> worker 通过 `http://go2rtc:1984` 拉流；web 的 nginx 用 `/api` 代理到 `api:8000`，
+> 用 `/rtc` 反代到 `go2rtc:1984`（带 WebSocket Upgrade）。go2rtc 显式映射
+> `1984/8554/8555/8556` 端口。ONVIF 组播发现在 bridge 下受限，改用页面上的
+> "扫描摄像头"做单播网段扫描。此方案已在 Windows Docker Desktop 上实测可用。
 
 ## 一、快速启动
 
@@ -73,6 +74,35 @@ rtsp://user:password@192.168.1.64:554/stream1
 ```yaml
 devices:
   - /dev/video0:/dev/video0
+```
+
+### 实时预览（真正 WebRTC）
+
+摄像头启用后，"实时预览"页会自动播放画面。链路是：
+
+```
+浏览器 <video>
+  │  RTCPeerConnection（iceServers 为空，不使用公网 STUN）
+  │  WebSocket 信令：/rtc/api/ws?src=cam_<摄像头ID>
+  ▼
+nginx /rtc/（Upgrade: websocket）
+  ▼
+go2rtc:1984 → WebRTC 视频轨 → 浏览器原生解码 H.264
+```
+
+要点：
+
+- go2rtc 的流名固定为 `cam_<id>`，新增/删除摄像头时由 API 自动同步到 `config/go2rtc.yaml`
+- 前端不再只是占位图；`StreamPlayer.tsx` 按 go2rtc 官方协议发送 `webrtc/offer`、接收 `webrtc/answer` 与 `webrtc/candidate`
+- 不使用公网 STUN，ICE 候选只在浏览器与本机/内网 go2rtc 之间交换
+- 主流 Chrome / Edge 可直接解码 H.264；预览失败不影响 worker 拉流比对
+
+自检命令：
+
+```bash
+curl http://localhost:8080/rtc/api/streams
+# 对应 cam_1 出现 consumers、senders[].codec.codec_name=h264 且 bytes 持续增长即正常
+docker compose logs go2rtc --tail=100
 ```
 
 ## 四、配置比对库
@@ -144,8 +174,10 @@ events:
 在 Web 界面添加摄像头后确认状态为"运行中"。
 
 **Q: 打不开实时画面？**
-WebRTC 需要 go2rtc 正确运行。检查 `docker compose logs go2rtc`，
-并确认 8554/8555 端口未被占用。画面预览属增强功能，不影响人脸比对主链路。
+先确认摄像头已启用，然后打开 `http://localhost:8080/rtc/api/streams`，看对应 `cam_<id>` 是否有
+`consumers` 且 H.264 字节数持续增长。再检查 `docker compose logs go2rtc` 与 1984/8554/8555/8556
+端口是否被占用。浏览器需支持 WebRTC 与 H.264（Chrome / Edge 默认支持）。
+画面预览属增强功能，不影响 worker 拉流与人脸/宠物比对主链路。
 
 **Q: 告警一定要有域名吗？**
 不需要。只有"传统 Webhook 且接收方架在公网"才需要。Telegram、群机器人、本地长连接桥接器都是 OpenSight 主动连出去，本机不开端口。详见 NOTIFICATIONS.md。

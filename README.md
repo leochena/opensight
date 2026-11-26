@@ -29,6 +29,7 @@
 - **用户自建比对库**：手动上传照片，本地提取特征向量；可设相似度阈值、按库分组；宠物库可记录物种/品种
 - **事件与告警**：Telegram Bot、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ）、Webhook、MQTT；**绝大多数通道不需要公网域名**
 - **事件留证**：命中自动存单帧快照 + 前后各 5 秒告警视频片段（MP4），事件页可直接播放/下载，全程本地、异步录制不影响识别
+- **真正的实时预览**：浏览器经 nginx `/rtc/` 同源反代与 go2rtc 建立 WebRTC，H.264 由浏览器原生解码；无插件、无公网 STUN、无需额外暴露端口
 - **现代 Web UI**：实时预览、事件流、比对库管理、一键启停
 - **合规内建**：显著告知标识生成、审计日志、数据一键清除、留存期可配置
 
@@ -50,6 +51,8 @@
                                                       ▼
                                           React Web UI（本地:8080）
 ```
+
+实时预览走独立链路：**浏览器 → nginx `/rtc/`（WebSocket Upgrade）→ go2rtc → WebRTC 视频轨 → 浏览器原生解码**。容器全部使用 bridge 网络，服务名互访；go2rtc 对外映射 `1984/8554/8555/8556`，页面只访问同源的 `8080`。
 
 全部组件通过 Docker Compose 编排，一条命令启动。
 
@@ -90,7 +93,7 @@ OpenSight 是**工具**，不是**数据服务**。技术中立不等于使用�
 
 | 层 | 技术 |
 |---|---|
-| 流媒体 | go2rtc（ONVIF / RTSP / WebRTC / RTMP） |
+| 流媒体 | go2rtc（ONVIF / RTSP / WebRTC / RTMP；bridge 网络 + nginx `/rtc/` 反代） |
 | 后端 | Python 3.11 + FastAPI + SQLAlchemy + SQLite |
 | 视觉 | InsightFace(ONNXRuntime) / OpenCV / NumPy |
 | 前端 | React 18 + TypeScript + Vite |

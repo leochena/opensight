@@ -33,7 +33,9 @@ opensight/
 │   ├── test_scan.py       扫描引擎单测（12 项）
 │   └── test_go2rtc_sync.py go2rtc 流配置同步单测（3 项）
 ├── frontend/              React + TypeScript + Vite + Nginx
-│   └── src/App.tsx        实时预览/比对库/事件/合规 四个页面
+│   ├── src/App.tsx        实时预览/比对库/事件/合规 四个页面
+│   ├── src/StreamPlayer.tsx go2rtc WebRTC 播放器（无公网 STUN）
+│   └── nginx.conf         /api 与 /rtc 反代（含 WebSocket Upgrade）
 ├── docs/
 │   ├── DEPLOYMENT.md      部署与真实识别启用
 │   ├── CAMERAS.md         摄像头协议与品牌 RTSP 参考
@@ -56,7 +58,7 @@ opensight/
 - **事件系统**：相似度阈值、冷却期、快照、自动过期清理
 - **告警视频片段**：命中时自动录制前后各 5 秒 MP4，事件页可播放/下载；环形帧缓冲 + 异步导出，不影响识别主循环；可配置时长与帧率
 - **多通道告警**：Telegram Bot（无需域名/无需 long polling）、企微/钉钉/飞书群机器人、本地长连接桥接器（OpenClaw / QQ / 微信）、传统 Webhook、MQTT；可同时启用，单通道失败互不干扰，提供测试通知 API
-- **Web UI**：实时预览、比对库管理、事件复核（含视频播放/下载）、审计日志、一键清除数据
+- **Web UI**：真正的 WebRTC 实时预览（浏览器原生解码 H.264，无公网 STUN）、比对库管理、事件复核（含视频播放/下载）、审计日志、一键清除数据
 - **合规内建**：显著告知标识、结果定性为"候选提示"、审计、数据最小化
 - **导入风险警示**：向比对库添加人员时强制显示来源与用途限制；姓名/备注含"通缉/在逃/逃犯"等字样自动升级为红色危险警示；须勾选确认方可导入，确认状态写进审计日志
 
@@ -68,12 +70,13 @@ opensight/
 4. **责任边界清晰**：COMPLIANCE.md 明确禁止用途与各司法辖区法规，使用者自负合规责任
 5. **默认真实模型 + 构建期固化**：开箱即用人脸/宠物真实识别，模型在镜像构建期下载固化，运行时零下载、断网可用；mock 保留作降级排障
 6. **告警优先长连接/出站通道**：默认推荐 Telegram Bot、群机器人和本地桥接器，都不要求用户有域名；传统 Webhook 降级为高级选项，避免公益用户卡在穿透配置上
-7. **Windows Docker Desktop 网络适配**：go2rtc 保留 host 网络做 ONVIF 发现，worker/api/web 走 bridge 并经 `host.docker.internal` / nginx 服务名互访，Windows 下无需 WSL2 即可跑通
+7. **Windows Docker Desktop 网络适配**：go2rtc / worker / api / web 全部走 bridge，容器间用服务名互访；nginx `/api` 代理到 `api:8000`、`/rtc` 反代到 `go2rtc:1984`（WebSocket Upgrade），ONVIF 组播发现受限改用单播网段扫描；Windows 下无需 WSL2
+8. **实时预览隐私优先**：WebRTC 播放器 `iceServers` 为空，不走公网 STUN；视频轨经同源 `/rtc/` 从本机 go2rtc 到浏览器，H.264 由浏览器原生解码
 
 ## 验证状态
 
 - 后端 Python 语法检查：通过（含 notifiers/ 全部模块）
-- 前端 TypeScript + Vite 构建：通过（1572 模块，产物 164.93KB JS / 7.78KB CSS）
+- 前端 TypeScript + Vite 构建：通过（1573 模块，产物 174.67KB JS / 10.38KB CSS）
 - 配置文件 YAML 格式：全部通过（config.yaml / go2rtc.yaml / docker-compose.yml）
 - 配置加载与 mock 相似度逻辑：通过
 - **真实模型实测**：人脸 buffalo_sc 检测到人脸并提 512 维特征；宠物 ONNX 提 512 维 L2 归一化向量、猫狗相似度区分明显（均已本机跑通）
@@ -88,6 +91,7 @@ opensight/
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
 - **视频接口端到端验证**：造测试事件 + MP4 后 `/api/events` 正确返回 `video_url`，`GET /api/videos/verify_demo.mp4` HTTP 200（17740 bytes）；验证数据已通过 `/api/privacy/purge-all` 清理，`/api/events` 恢复空、`data/videos/` 为空
 - **Windows Docker Desktop 运行验证**：修复 worker 启动方式（`python -m app.worker`，否则相对导入失败）、worker 与 api 抢 8000 端口、api/worker/web 改 bridge 网络、nginx `/api` 代理指向服务名 `api:8000`；4 容器全部 Up，`/api/health` 返回 `engine: insightface`，`/api/config` 显示 `pet_engine: pet-onnx`
+- **WebRTC 实时预览端到端验证**：go2rtc 由 host 改 bridge + 显式端口映射，worker 改 `http://go2rtc:1984`，nginx 新增 `/rtc/` 反代与 WebSocket Upgrade。发现并修复播放器信令协议错误：原代码用 `webrtc`+`data/sdp/candidate`，go2rtc 官方实际要求 `webrtc/offer` / `webrtc/answer` / `webrtc/candidate` 且字段为 `value`；修正并去掉公网 STUN 后，重启 go2rtc 使消费者归零，打开应用页面产生新消费者 `id=31`（`ws+udp`），`senders[].codec.codec_name=h264`，`bytes_send` 实测达 `1944230`，确认浏览器正在接收视频
 
 ## 启动方式
 
@@ -106,3 +110,4 @@ docker compose up -d --build
 - 当前 worker 串行处理多摄像头，路数多时需横向扩展
 - InsightFace 模型权重部分仅限非商业研究，商用前需核对许可或替换
 - 告警视频由 worker 内存帧缓冲导出，仅覆盖命中前后各 5 秒，不是连续录像；worker 重启会丢失未落盘的缓冲帧
+- 实时预览依赖浏览器 WebRTC 与 H.264 解码能力；Chrome / Edge 默认支持，Firefox 部分环境需确认 H.264 编解码器可用
