@@ -1,11 +1,12 @@
-"""局域网摄像头扫描：网段解析 + 并发探测（ONVIF / RTSP）。
+"""局域网摄像头扫描：网段解析 + 并发探测（ONVIF / RTSP / RTSPS）。
 
 设计原则：
 1. 只探测本地网络，不访问公网；目标网段由用户显式给出或自动推断。
 2. 两阶段：先并发 TCP 端口探测（毫秒级），仅对开放端口再做协议握手，
    避免对每台设备下载 ONVIF WSDL（onvif-zeep 那样会很慢）。
 3. ONVIF 用裸 SOAP GetDeviceInformation + WS-UsernameToken，标准库实现，零额外依赖。
-4. RTSP 用 OPTIONS 请求探活，再尝试从 DESCRIBE 里识别厂商。
+4. RTSP / RTSPS 都用 OPTIONS 请求探活；RTSPS 用不校验证书的 TLS 握手，
+   最终源写成 go2rtc 的 rtspx://。
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import logging
 import os
 import re
 import socket
+import ssl
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -24,6 +26,9 @@ log = logging.getLogger("opensight.scan")
 
 ONVIF_PORTS = (80, 8080, 8000)
 RTSP_PORTS = (554, 8554)
+# RTSP over TLS（如 Android IP Camera 的 8554）。扫描时单独用 TLS 握手探测，
+# 最终源会写成 go2rtc 的 rtspx://（跳过自签证书校验）。
+RTSPS_PORTS = (8554,)
 
 # WS-Discovery 之外最轻量的 ONVIF 探测：直接对设备 XAddrs 发 GetDeviceInformation
 _GET_DEVICE_INFO = """<?xml version="1.0" encoding="UTF-8"?>
@@ -219,17 +224,31 @@ def _probe_onvif(host: str, port: int, username: str, password: str, timeout: fl
     )
 
 
-def _probe_rtsp(host: str, port: int, username: str, password: str, timeout: float) -> ScanHit | None:
-    """RTSP OPTIONS 探活；带凭据时尝试 DESCRIBE 取 SDP 里的厂商信息。"""
+def _probe_rtsp(
+    host: str, port: int, username: str, password: str, timeout: float, tls: bool = False,
+) -> ScanHit | None:
+    """RTSP OPTIONS 探活；tls=True 时走 RTSP over TLS（RTSPS）。
+
+    自签证书设备（如 Android IP Camera）在 TLS 握手时不校验证书；
+    go2rtc 侧对应使用 rtspx:// 源。
+    """
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
+        raw = socket.create_connection((host, port), timeout=timeout)
+        if tls:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            s = ctx.wrap_socket(raw, server_hostname=host)
+        else:
+            s = raw
+        with s:
             s.settimeout(timeout)
             s.sendall(
                 f"OPTIONS rtsp://{host}:{port}/ RTSP/1.0\r\n"
                 f"CSeq: 1\r\nUser-Agent: OpenSight-Scan\r\n\r\n".encode("ascii")
             )
             banner = s.recv(2048).decode("latin-1", "ignore")
-    except OSError:
+    except (OSError, ssl.SSLError):
         return None
     if "RTSP/1.0" not in banner:
         return None
@@ -246,30 +265,47 @@ def _probe_rtsp(host: str, port: int, username: str, password: str, timeout: flo
     auth = ""
     if username or password:
         auth = f"{quote(username, safe='')}:{quote(password, safe='')}@"
-    rtsp_url = f"rtsp://{auth}{host}:{port}/"
+    scheme = "rtsps" if tls else "rtsp"
+    # RTSPS 多见于手机 IP 摄像头 App，/live 是最常见的默认路径；
+    # 用户可在添加前修改。明文 RTSP 仍保留通用根路径。
+    path = "/live" if tls else "/"
+    rtsp_url = f"{scheme}://{auth}{host}:{port}{path}"
+    # go2rtc 用 rtspx:// 表示「RTSPS 但不校验自签证书」
+    source = f"rtspx://{auth}{host}:{port}{path}" if tls else rtsp_url
     return ScanHit(
-        address=host, port=port, protocol="rtsp",
+        address=host, port=port, protocol="rtsps" if tls else "rtsp",
         manufacturer=manufacturer, needs_auth=needs_auth,
-        rtsp_url=rtsp_url, source=rtsp_url,
+        rtsp_url=rtsp_url, source=source,
     )
 
 
 def _probe_host(
-    args: tuple[str, float, str, str, tuple[int, ...], tuple[int, ...]],
+    args: tuple[str, float, str, str, tuple[int, ...], tuple[int, ...], tuple[int, ...]],
 ) -> list[ScanHit]:
-    host, timeout, username, password, onvif_ports, rtsp_ports = args
+    host, timeout, username, password, onvif_ports, rtsp_ports, rtsps_ports = args
     hits: list[ScanHit] = []
-    # ONVIF 端口
+    # ONVIF 端口（明文 HTTP）
     for port in onvif_ports:
         if _port_open(host, port, timeout):
             hit = _probe_onvif(host, port, username, password, timeout)
             if hit:
                 hits.append(hit)
                 break  # 一台设备一个 ONVIF 结果足够
-    # RTSP 端口
+    # RTSP 端口（明文）
     for port in rtsp_ports:
         if _port_open(host, port, timeout):
             hit = _probe_rtsp(host, port, username, password, timeout)
+            if hit:
+                hits.append(hit)
+                break
+    # RTSPS 端口（TLS，自签证书）。8554 与明文 RTSP 重叠：同一个端口先试明文，
+    # 再试 TLS；若明文已命中则跳过 TLS，避免重复结果。
+    rtsp_ports_hit = {h.port for h in hits if h.protocol == "rtsp"}
+    for port in rtsps_ports:
+        if port in rtsp_ports_hit:
+            continue
+        if _port_open(host, port, timeout):
+            hit = _probe_rtsp(host, port, username, password, timeout, tls=True)
             if hit:
                 hits.append(hit)
                 break
@@ -291,13 +327,18 @@ def scan_network(
     # 按请求的协议决定探测哪些端口（用局部变量，避免并发请求互相干扰）
     onvif_ports = ONVIF_PORTS if "onvif" in protocols else ()
     rtsp_ports = RTSP_PORTS if "rtsp" in protocols else ()
+    # 选 RTSP 协议时同时覆盖 RTSPS（TLS），前端无需单独的勾选项
+    rtsps_ports = RTSPS_PORTS if "rtsp" in protocols else ()
 
     timeout = max(0.2, min(float(timeout), 5.0))
     concurrency = max(1, min(int(concurrency), 256))
     hits: list[ScanHit] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {
-            pool.submit(_probe_host, (h, timeout, username, password, onvif_ports, rtsp_ports)): h
+            pool.submit(
+                _probe_host,
+                (h, timeout, username, password, onvif_ports, rtsp_ports, rtsps_ports),
+            ): h
             for h in hosts
         }
         for fut in concurrent.futures.as_completed(futures):
@@ -313,7 +354,7 @@ def scan_network(
 
 def hit_to_source(hit: ScanHit, username: str = "", password: str = "") -> str:
     """把扫描命中转换成 go2rtc 源。ONVIF 命中复用已有的组装逻辑。"""
+    from .onvif import build_onvif_source, normalize_camera_source
     if hit.protocol == "onvif":
-        from .onvif import build_onvif_source
         return build_onvif_source(hit.address, username, password, hit.port)
-    return hit.source or hit.rtsp_url
+    return normalize_camera_source(hit.source or hit.rtsp_url)

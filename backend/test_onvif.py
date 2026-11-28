@@ -66,6 +66,21 @@ class BuildSourceForCameraTests(unittest.TestCase):
         url = "rtsp://admin:pw@10.0.0.5:554/stream1"
         self.assertEqual(build_source_for_camera(url, "rtsp", "ignored", "ignored", 80), url)
 
+    def test_rtsps_becomes_rtspx_for_go2rtc(self):
+        # go2rtc 用 rtspx:// 表示「RTSPS 但不校验自签证书」
+        self.assertEqual(
+            build_source_for_camera(
+                "rtsps://admin:pw@10.0.0.5:8554/live", "rtsp", "ignored", "ignored", 80,
+            ),
+            "rtspx://admin:pw@10.0.0.5:8554/live",
+        )
+
+    def test_rstps_typo_also_normalized(self):
+        self.assertEqual(
+            build_source_for_camera("rstps://10.0.0.5:8554/live", "rtsp", "", "", 80),
+            "rtspx://10.0.0.5:8554/live",
+        )
+
     def test_usb_unchanged(self):
         self.assertEqual(build_source_for_camera("0", "usb", "", "", 80), "0")
 

@@ -64,9 +64,11 @@ rtsp://user:password@192.168.1.64:554/stream1
 ### ONVIF
 协议选 ONVIF 后，表单会出现**用户名 / 密码 / 端口**字段（多数设备用户名为 `admin`，密码是 ONVIF/RTSP 服务密码，端口默认 80；Reolink 常用 8000、Tapo 用 2020）。"地址 / 流"填设备 IP，保存后系统自动组装成 go2rtc 的 `onvif://用户:密码@IP:端口` 并解析出 RTSP。
 
-更省事：页面顶部点"**扫描摄像头**"，可扫整个网段（自动识别或手填 CIDR/IP 范围）并**勾选批量添加**，同时探测 ONVIF 和 RTSP 设备。扫描是并发单播探测，比组播发现可靠。
+更省事：页面顶部点"**扫描摄像头**"，可扫整个网段（自动识别或手填 CIDR/IP 范围）并**勾选批量添加**，同时探测 ONVIF、RTSP 与 RTSPS 设备（勾选 RTSP 即包含 RTSPS）。扫描是并发单播探测，比组播发现可靠。
 
-发现依赖 onvif-zeep；Windows Docker Desktop 下组播发现常受限，**发现不到就直接手动填 IP + 凭据**，或干脆用 RTSP 地址（协议选 RTSP，账号密码写进 URL）添加。详见 [CAMERAS.md](CAMERAS.md)。
+**手机当摄像头**：用 [Android IP Camera](https://github.com/DigitallyRefined/android-ip-camera) 这类 app 时，协议选 **RTSP**，地址填 `rtsps://手机IP:8554/live`。系统会自动转成 go2rtc 的 `rtspx://` 源以跳过自签证书校验。其 `https://手机IP:8000` 的 ONVIF 端点**不能**用 ONVIF 类型添加（go2rtc 的 ONVIF 只走明文 HTTP）。
+
+发现依赖 onvif-zeep；Windows Docker Desktop 下组播发现常受限，**发现不到就直接手动填 IP + 凭据**，或干脆用 RTSP/RTSPS 地址（协议选 RTSP）添加。若手机能 ping 通但端口扫不到，先检查路由器是否开了 AP 隔离。详见 [CAMERAS.md](CAMERAS.md)。
 
 ### USB 摄像头
 协议选 USB，地址填设备序号（如 `0`、`1`）。需要将设备映射进容器，

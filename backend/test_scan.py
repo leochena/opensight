@@ -2,6 +2,7 @@
 import socket
 import threading
 import unittest
+from unittest import mock
 
 from app.scan import ScanHit, hit_to_source, local_subnet, parse_targets, scan_network
 
@@ -58,6 +59,20 @@ class HitToSourceTests(unittest.TestCase):
         hit = ScanHit(address="10.0.0.5", port=554, protocol="rtsp", source="rtsp://u:p@10.0.0.5:554/")
         self.assertEqual(hit_to_source(hit), "rtsp://u:p@10.0.0.5:554/")
 
+    def test_rtsps_hit_becomes_rtspx(self):
+        hit = ScanHit(
+            address="10.0.0.5", port=8554, protocol="rtsps",
+            source="rtspx://u:p@10.0.0.5:8554/live",
+        )
+        self.assertEqual(hit_to_source(hit), "rtspx://u:p@10.0.0.5:8554/live")
+
+    def test_rtsps_source_normalized(self):
+        hit = ScanHit(
+            address="10.0.0.5", port=8554, protocol="rtsps",
+            source="rtsps://u:p@10.0.0.5:8554/live",
+        )
+        self.assertEqual(hit_to_source(hit), "rtspx://u:p@10.0.0.5:8554/live")
+
 
 class ScanNetworkTests(unittest.TestCase):
     def test_scan_local_listener(self):
@@ -82,12 +97,15 @@ class ScanNetworkTests(unittest.TestCase):
         t = threading.Thread(target=serve, daemon=True)
         t.start()
         try:
-            hits, count = scan_network(
-                "127.0.0.1", timeout=0.3, concurrency=2,
-                protocols=("rtsp",),
-            )
+            # 把探测端口指向这个临时监听端口，避免宿主机上真实运行的 go2rtc:8554
+            # 干扰测试结果。假服务立刻关连接，不应被识别为摄像头。
+            with mock.patch("app.scan.RTSP_PORTS", (port,)), \
+                 mock.patch("app.scan.RTSPS_PORTS", ()):
+                hits, count = scan_network(
+                    "127.0.0.1", timeout=0.3, concurrency=2,
+                    protocols=("rtsp",),
+                )
             self.assertEqual(count, 1)
-            # 假服务不应被识别为摄像头
             self.assertEqual(hits, [])
         finally:
             srv.close()

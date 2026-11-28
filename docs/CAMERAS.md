@@ -58,6 +58,25 @@ ONVIF 设备几乎都需要用户名密码才能取流。添加时：
 
 > go2rtc 的 ONVIF 客户端仅支持 TCP 传输的 RTSP；个别老设备可能需要改用 RTSP 直连。RTSP 扫描只能探测到端口和通用地址，具体流路径（如 `/stream1`、`/Streaming/Channels/101`）需按设备品牌补全，见上方 RTSP 地址参考。
 
+### 手机当摄像头（RTSPS / 自签证书）
+
+开源 app [Android IP Camera](https://github.com/DigitallyRefined/android-ip-camera)（MIT）会把手机变成 IP 摄像头，典型地址：
+
+```text
+https://手机IP:4444/                       # 本地管理页
+rtsps://手机IP:8554/live                   # 主码流（RTSP over TLS，自签证书）
+rtsps://手机IP:8554/live/sub               # 子码流
+https://手机IP:8000/onvif/device_service   # ONVIF over HTTPS
+```
+
+OpenSight 的用法：
+
+- **推荐用 RTSP 类型添加**，地址填 `rtsps://手机IP:8554/live`。后端会自动转成 go2rtc 认识的 `rtspx://手机IP:8554/live`——`rtspx://` 表示「RTSPS 但不校验自签证书」，这是 go2rtc 官方写法。常见的 `rstps://` 笔误也会自动纠正。
+- 扫描面板勾选 **RTSP** 时，除了明文 554/8554，还会用 TLS 探测 8554。命中结果会显示 `RTSPS`，默认源带 `/live` 路径，可在添加前修改。
+- **不要用 ONVIF 类型添加这类 HTTPS ONVIF 设备**：go2rtc 的 `onvif://` 源只走明文 HTTP，无法消费 `https://...:8000/onvif/device_service`。直接用上面的 RTSPS 地址即可。
+
+> 网络前提：手机和电脑必须真的能互访 TCP。能 `ping` 通但 `4444/8554/8000` 全部超时，是路由器开启了「AP 隔离 / 客户端隔离」，扫描一定扫不到。关闭该选项，或让手机开热点、电脑连手机热点后再试。可在电脑上执行 `Test-NetConnection 手机IP -Port 8554`（PowerShell）确认。
+
 ## 网络与带宽
 
 - 单路 1080p 子码流约 2–4Mbps 持续占用

@@ -29,7 +29,7 @@ opensight/
 │   ├── test_recording.py  告警视频录制单测（裁剪/上限/MP4/异步回调）
 │   ├── app/onvif.py       ONVIF 凭据地址组装（特殊字符转义）
 │   ├── app/scan.py        局域网扫描：网段解析 + 并发 ONVIF/RTSP 探测
-│   ├── test_onvif.py      ONVIF 地址组装单测（11 项）
+│   ├── test_onvif.py      ONVIF 地址组装 + RTSPS 归一化单测（13 项）
 │   ├── test_scan.py       扫描引擎单测（12 项）
 │   └── test_go2rtc_sync.py go2rtc 流配置同步单测（3 项）
 ├── frontend/              React + TypeScript + Vite + Nginx
@@ -49,7 +49,7 @@ opensight/
 ## 实现的功能
 
 - **纯本地**：所有推理在容器内完成，无外部 API；断网可用
-- **摄像头接入**：ONVIF（带用户名/密码/端口，自动组装认证取流地址）/ RTSP / WebRTC（go2rtc）/ USB
+- **摄像头接入**：ONVIF（带用户名/密码/端口，自动组装认证取流地址）/ RTSP / **RTSPS 自签证书（自动转 go2rtc `rtspx://`）** / WebRTC（go2rtc）/ USB
 - **局域网扫描**：自动识别本机网段或手填 CIDR/IP 范围/通配符，并发探测 ONVIF+RTSP 设备，展示厂商型号并勾选批量添加；只读探测、不自动入库
 - **用户自建比对库**：手动上传照片，本地提取特征向量，支持多库分组
 - **识别引擎可插拔**：mock 仅作降级，默认真实识别（InsightFace / 宠物 ONNX）
@@ -84,10 +84,11 @@ opensight/
 - **通知适配器单测：12 项全部通过** —— 消息格式化与 HTML 转义、Telegram 出站 sendMessage 与密钥脱敏、三种群机器人消息体、cqhttp/OpenClaw 本地桥接、Webhook、多通道并发分发与单通道失败隔离、旧配置回退兼容
 - **宠物识别单测：7 项全部通过** —— 双引擎零依赖、按类型路由、向量空间隔离、宠物库/物种 API 往返、配置暴露双引擎、旧库自动补齐新列、**真实 ONNX 模型 embedding 集成测试**
 - **告警视频录制单测：4 项全部通过** —— 环形缓冲时间裁剪、帧数硬上限、同步产出可解析 MP4、异步录制回调回填事件
-- **ONVIF 地址组装单测：11 项全部通过** —— 凭据/端口组装、无凭据匿名、特殊字符 percent 编码与还原、地址内嵌端口不重复、完整 URL 透传、非法端口回退、非 ONVIF 类型原样保留
+- **ONVIF 地址组装单测：13 项全部通过** —— 凭据/端口组装、无凭据匿名、特殊字符 percent 编码与还原、地址内嵌端口不重复、完整 URL 透传、非法端口回退、非 ONVIF 类型原样保留、`rtsps://`/`rstps://` → `rtspx://` 归一化
 - **go2rtc 流同步单测：3 项全部通过** —— 修复 `streams:` 键为 None 时 `setdefault` 返回 None 导致 `clear()` 崩溃的既有 bug；覆盖 streams 缺失/为 null/删除清理三种情况
 - **ONVIF 端到端验证**：创建带特殊字符密码的 ONVIF 摄像头，API 正确返回组装后的 `onvif://...`，`config/go2rtc.yaml` 真实写入 `cam_1: onvif://...`，删除后自动清空；api 容器新增 go2rtc.yaml 挂载使同步生效
-- **局域网扫描单测：12 项全部通过** —— CIDR/范围/通配符/单 IP/自动识别解析、超大网段与非法输入拒绝、ONVIF/RTSP 命中转源、并发扫描框架与超时控制（本地回环监听验证）
+- **局域网扫描单测：14 项全部通过** —— CIDR/范围/通配符/单 IP/自动识别解析、超大网段与非法输入拒绝、ONVIF/RTSP/RTSPS 命中转源、并发扫描框架与超时控制（本地回环监听验证）
+- **RTSPS 本地 TLS 端到端验证**：用 openssl 生成自签证书、起本地 TLS RTSP 服务模拟手机 IP 摄像头，扫描正确返回 `protocol=rtsps`、`Server: AndroidIPCamera`，源为 `rtspx://127.0.0.1:<port>/live`；`rtsps://` 与 `rstps://` 笔误均归一化。用户手机 `10.168.10.136` 实测可 ping 通但 `4444/8554/8000` TCP 全部超时，属路由器 AP 隔离，待用户关闭隔离或改用手机热点后做真机验证
 - **API 端到端测试：全部通过** —— 建库/加人/摄像头增删改停/测试通知/事件/审计/清理/一键清除全链路 200；累计发现并修复 4 处 bug（Base.metadata.create_all、Settings.get、图片上传参数、前端 addPerson 用 form 传 name/note 与后端 query 参数不匹配）
 - **视频接口端到端验证**：造测试事件 + MP4 后 `/api/events` 正确返回 `video_url`，`GET /api/videos/verify_demo.mp4` HTTP 200（17740 bytes）；验证数据已通过 `/api/privacy/purge-all` 清理，`/api/events` 恢复空、`data/videos/` 为空
 - **Windows Docker Desktop 运行验证**：修复 worker 启动方式（`python -m app.worker`，否则相对导入失败）、worker 与 api 抢 8000 端口、api/worker/web 改 bridge 网络、nginx `/api` 代理指向服务名 `api:8000`；4 容器全部 Up，`/api/health` 返回 `engine: insightface`，`/api/config` 显示 `pet_engine: pet-onnx`
@@ -111,3 +112,5 @@ docker compose up -d --build
 - InsightFace 模型权重部分仅限非商业研究，商用前需核对许可或替换
 - 告警视频由 worker 内存帧缓冲导出，仅覆盖命中前后各 5 秒，不是连续录像；worker 重启会丢失未落盘的缓冲帧
 - 实时预览依赖浏览器 WebRTC 与 H.264 解码能力；Chrome / Edge 默认支持，Firefox 部分环境需确认 H.264 编解码器可用
+- go2rtc 的 `onvif://` 源不支持 HTTPS ONVIF（如 Android IP Camera 的 `:8000`），这类设备请用 RTSPS 地址以 RTSP 类型添加
+- 局域网扫描要求客户端之间 TCP 可达；路由器开启 AP 隔离时只能 ping 通但扫不到端口，需关闭隔离或改用手机热点

@@ -50,12 +50,25 @@ def build_onvif_source(
     return f"onvif://{auth}{base}:{p}"
 
 
+def normalize_camera_source(source: str) -> str:
+    """把用户给的源地址转成 go2rtc 可消费的形式。
+
+    go2rtc 对自签证书的 RTSP over TLS 使用 ``rtspx://`` 前缀而不是 ``rtsps://``
+    （等价于关闭 HTTPS 证书校验）。这里同时兼容用户常见的 ``rstps://`` 笔误。
+    """
+    s = (source or "").strip()
+    low = s.lower()
+    if low.startswith("rtsps://") or low.startswith("rstps://"):
+        return "rtspx://" + s.split("://", 1)[1]
+    return s
+
+
 def build_source_for_camera(source: str, kind: str, username: str, password: str, port: int) -> str:
     """按摄像头类型返回最终写入 go2rtc 的源地址。
 
-    ONVIF 类型统一走 build_onvif_source；其他类型（RTSP/USB/HTTP）保持原样——
-    RTSP 的凭据用户直接写在 URL 里（rtsp://user:pass@ip/path）。
+    ONVIF 类型统一走 build_onvif_source；其他类型保持原样，仅做 RTSPS→RTSPX
+    归一化。RTSP 的凭据仍由用户直接写在 URL 里（rtsp://user:pass@ip/path）。
     """
     if kind == "onvif":
-        return build_onvif_source(source, username, password, port)
-    return source
+        source = build_onvif_source(source, username, password, port)
+    return normalize_camera_source(source)
