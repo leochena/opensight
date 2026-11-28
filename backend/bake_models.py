@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import urllib.request
 
 MODELS_DIR = os.getenv("OPENSIGHT_MODEL_DIR", "/opt/opensight/models")
@@ -26,6 +27,21 @@ PET_MODEL_URLS = {
 PET_SIZES = {"small": 89_000_000, "base": 348_000_000, "large": 1_200_000_000}
 
 
+def _download_with_retry(url: str, dst: str, attempts: int = 3) -> None:
+    """下载大文件；网络抖动导致 ContentTooShort 时清掉残片重试。"""
+    for i in range(1, attempts + 1):
+        try:
+            urllib.request.urlretrieve(url, dst)
+            return
+        except Exception as e:
+            print(f"[bake] 下载失败 {i}/{attempts}: {e}", flush=True)
+            if os.path.exists(dst):
+                os.remove(dst)
+            if i == attempts:
+                raise
+            time.sleep(2 * i)
+
+
 def download_pet(size: str) -> None:
     size = size if size in PET_MODEL_URLS else "small"
     dst = os.path.join(MODELS_DIR, f"pet-recognition-{size}.onnx")
@@ -34,7 +50,7 @@ def download_pet(size: str) -> None:
         return
     os.makedirs(MODELS_DIR, exist_ok=True)
     print(f"[bake] 下载宠物模型 {size} -> {dst}", flush=True)
-    urllib.request.urlretrieve(PET_MODEL_URLS[size], dst)
+    _download_with_retry(PET_MODEL_URLS[size], dst)
     print(f"[bake] 宠物模型完成：{os.path.getsize(dst)} bytes", flush=True)
 
 
